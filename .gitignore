@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Environment and secrets
+.env
+.plutof_env
+*.env
+*.json
+!requirements.txt
+!package.json
+!tsconfig.json
+!client_secret.json.example
+
+# Local databases and caches
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+.DS_Store
+.google_photos_token.json
+.google_photos_synced_obs.json
+.google_photos_album_id.txt
+.taxa_cache.json
+.geo_cache.json
+.plutof_processed_photos.json
+
+# Logs
+*.log
