@@ -3,6 +3,8 @@
 > **Professionaalne, ülikiire ja automatiseeritud CLI tööriist seenevaatluste edastamiseks PlutoF / eElurikkuse ametlikku andmebaasi.**  
 > *(Nimi: **PlutoFF** – viimane **F** nagu **Fungi** 🍄)*
 
+![PlutoFF Demo](docs/demo.gif)
+
 Toetab **macOS**, **Linux** ja **Windows** operatsioonisüsteeme.
 
 ---
