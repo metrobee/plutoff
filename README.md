@@ -1,39 +1,38 @@
-# 🍄 PlutoF Seenevaatluste CLI (`seen`)
+# 🍄 PlutoFF (`seen`)
 
-> **Professionaalne, ülikiire ja automatiseeritud käsureatööriist seenevaatluste edastamiseks PlutoF / eElurikkuse ametlikku andmebaasi.**
+> **Professionaalne, ülikiire ja automatiseeritud CLI tööriist seenevaatluste edastamiseks PlutoF / eElurikkuse ametlikku andmebaasi.**  
+> *(Nimi: **PlutoFF** – viimane **F** nagu **Fungi** 🍄)*
 
 Toetab **macOS**, **Linux** ja **Windows** operatsioonisüsteeme.
 
 ---
 
-## ⚡️ Põhifunktsioonid
+## 🍺 Kiirpaigaldus Homebrew kaudu (macOS ja Linux)
 
-1. **Vahetu sisestamine lohistades:** Lohista fotod või `.zip` arhiiv otse terminali – skript loeb EXIF-ist täpsed GPS-koordinaadid, kõrguse ja kuupäeva.
-2. **Kahesuunaline taksonoomia otsing:** Tuvastab liiginimesid korraga nii eesti keeles (`pehmepoorik`, `harunev korallnarmik`) kui ladina keeles (`Sarcoporia polyspora`).
-3. **Vormi 72 mõõtmiste ja substraatide tugi:** Määrab automaatselt puuliigi (*Picea abies*, *Pinus sylvestris* jne), substraadi tüübi (*lamatüvi*, *känd*, *tüügas*), asustusviisi (*Looduses*) ja ohtruse (*Üksikud*, *Vähe*, *Sage*, *Ohtralt*).
-4. **3-tasandiline duplikaatide blokeering:**
-   - 🔒 **Tase 1 (SHA-256):** Kaitseb failisisu topeltlaadimise eest.
-   - 📄 **Tase 2 (Failinimi):** Tuvastab varem kasutatud pildinimed.
-   - 📐 **Tase 3 (EXIF aeg + GPS):** Hoiab ära sama hetke ja asukoha duplikaadid.
-5. **Automaatne failikoristus:** Pärast edukat API-kinnitust liigutatakse allalaaditud pildid või `.zip` fail automaatselt macOS-i Prügikasti (*Trash*), tagades puhta `Downloads` kausta.
-6. **Reaalajas kohalik andmebaas:** Salvestab vaatlused lokaalsesse SQLite andmebaasi (`plutof_vaatlused.db`) ja JSON-faili.
-7. **Google Photos integratsioon:** Sünkroonib pildid soovi korral automaatselt Google Photos albumisse `🍄 PlutoF Vaatlused`.
+Kõige kiirem ja mugavam viis tööriista paigaldamiseks on kasutada Homebrew'd:
+
+```bash
+brew tap metrobee/tap
+brew install seen
+```
+
+*Valmis! Pärast seda on käsk `seen` koheselt sinu terminalis kasutatav.*
 
 ---
 
-## 🚀 Paigaldus
+## 📦 Muud paigalduse viisid
 
-### macOS ja Linux
+### Git / Käsitsi paigaldus (macOS ja Linux)
 ```bash
-git clone https://github.com/sinukasutaja/seen-cli.git
-cd seen-cli
+git clone https://github.com/metrobee/plutoff.git
+cd plutoff
 ./install.sh
 ```
 
 ### Windows
 ```cmd
-git clone https://github.com/sinukasutaja/seen-cli.git
-cd seen-cli
+git clone https://github.com/metrobee/plutoff.git
+cd plutoff
 install.bat
 ```
 
@@ -50,7 +49,21 @@ PLUTOF_USERNAME=sinu_kasutajanimi_voi_email
 PLUTOF_PASSWORD=sinu_parool
 ```
 
-*(API võtmed saab luua tasuta PlutoF portaalis aadressil https://app.plutof.ut.ee seadete alt).*
+*(Tasuta API võtmed saad luua PlutoF portaalis aadressil https://app.plutof.ut.ee oma konto seadete alt).*
+
+---
+
+## ⚡️ Põhifunktsioonid
+
+1. **Vahetu sisestamine lohistades:** Lohista fotod või `.zip` arhiiv otse terminali – skript loeb EXIF-ist täpsed GPS-koordinaadid, kõrguse ja kuupäeva.
+2. **Kahesuunaline taksonoomia otsing:** Tuvastab liiginimesid korraga nii eesti keeles (`pehmepoorik`, `harunev korallnarmik`) kui ladina keeles (`Sarcoporia polyspora`).
+3. **Vormi 72 mõõtmiste ja substraatide tugi:** Määrab automaatselt puuliigi (*Picea abies*, *Pinus sylvestris* jne), substraadi tüübi (*lamatüvi*, *känd*, *tüügas*), asustusviisi (*Looduses*) ja ohtruse (*Üksikud*, *Vähe*, *Sage*, *Ohtralt*).
+4. **3-tasandiline duplikaatide blokeering:**
+   - 🔒 **Tase 1 (SHA-256):** Kaitseb failisisu topeltlaadimise eest.
+   - 📄 **Tase 2 (Failinimi):** Tuvastab varem kasutatud pildinimed (`PXL_...`).
+   - 📐 **Tase 3 (EXIF aeg + GPS):** Hoiab ära sama hetke ja asukoha duplikaadid.
+5. **Automaatne failikoristus:** Pärast edukat API-kinnitust liigutatakse allalaaditud pildid või `.zip` fail automaatselt macOS-i Prügikasti (*Trash*), tagades puhta `Downloads` kausta.
+6. **Reaalajas kohalik andmebaas:** Salvestab vaatlused lokaalsesse SQLite andmebaasi (`plutof_vaatlused.db`) ja JSON-faili.
 
 ---
 
