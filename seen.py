@@ -611,15 +611,29 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
     scientific_search = local_taxa.get(norm_query) or local_taxa.get(norm_query.replace("-", " ")) or raw_query
 
     # Kui sisestus sisaldas sulgudes ladinakeelset nime (nt 'Harilik kivipuravik (Boletus edulis)')
+    clean_query = raw_query
     m_paren = re.search(r'\((.*?)\)', raw_query)
     if m_paren:
         paren_content = m_paren.group(1).strip()
         clean_vern = re.sub(r'\(.*?\)', '', raw_query).strip()
         if paren_content:
             scientific_search = paren_content
+            clean_query = scientific_search
             norm_query = clean_vern.lower()
     elif norm_query == "kivipuravik":
         scientific_search = "Boletus edulis"
+        clean_query = "Boletus edulis"
+
+    # Perekonna taseme tuvastamine (sp. / sp / spp. / perekond / liik)
+    genus_mode = False
+    if re.search(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', norm_query, re.IGNORECASE):
+        genus_mode = True
+        clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', clean_query, flags=re.IGNORECASE).strip()
+        clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', scientific_search, flags=re.IGNORECASE).strip()
+    elif " " not in norm_query and norm_query not in ["kivipuravik"]:
+        genus_mode = True
+
+    clean_norm = clean_query.lower()
 
     taxa_cache = {}
     if os.path.exists(TAXA_CACHE_FILE):
@@ -629,28 +643,25 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         except Exception:
             taxa_cache = {}
 
-    if scientific_search in taxa_cache:
+    if scientific_search in taxa_cache and not genus_mode:
         return taxa_cache[scientific_search]
-    if raw_query in taxa_cache:
+    if raw_query in taxa_cache and not genus_mode:
         return taxa_cache[raw_query]
 
     taxon_info = {
         "search_name": raw_query,
-        "taxon_name": scientific_search,
-        "full_name": scientific_search,
-        "rank": "Liik",
+        "taxon_name": clean_query,
+        "full_name": clean_query,
+        "rank": "Perekond" if genus_mode else "Liik",
         "taxon_id": None,
         "vernacular_name": "",
         "kingdom": "Fungi"
     }
 
-    urls_to_try = []
-    if scientific_search and scientific_search != raw_query:
-        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(scientific_search)}")
-        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(scientific_search)}")
-    
-    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(norm_query)}")
-    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(norm_query)}")
+    urls_to_try = [
+        f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(clean_query)}",
+        f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(clean_query)}"
+    ]
 
     for url in urls_to_try:
         try:
@@ -664,15 +675,24 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
                 if items:
                     def sort_key(it):
                         at = it.get("attributes", {})
-                        tname = at.get("taxon_name", "").lower()
-                        fname = at.get("name", "").lower()
-                        vern = at.get("vernacular_name", "").lower()
+                        tname = at.get("taxon_name", "").strip().lower()
+                        fname = at.get("name", "").strip().lower()
+                        rank = at.get("taxon_rank", "")
+                        vern = at.get("vernacular_name", "").strip().lower()
+                        is_syn = at.get("is_synonym", False)
                         
-                        sci_match = 0 if (scientific_search and (scientific_search.lower() == tname or scientific_search.lower() in fname)) else 1
-                        vern_exact = 0 if (vern and vern == norm_query) else (1 if (vern and norm_query in vern) else 2)
-                        rank_score = 0 if at.get("taxon_rank") == "Species" else (1 if at.get("taxon_rank") == "Genus" else 2)
-                        syn_score = 1 if at.get("is_synonym") else 0
-                        return (sci_match, vern_exact, rank_score, syn_score)
+                        sci_exact = 0 if (tname == clean_norm or fname.startswith(clean_norm + " ") or fname == clean_norm) else (1 if clean_norm in fname else 2)
+                        vern_exact = 0 if (vern == clean_norm) else (1 if (vern and clean_norm in vern) else 2)
+                        name_match = min(sci_exact, vern_exact)
+
+                        if genus_mode:
+                            rank_score = 0 if rank == "Genus" else (1 if rank == "Species" else 2)
+                            syn_score = 1 if is_syn else 0
+                            return (rank_score, name_match, syn_score)
+                        else:
+                            rank_score = 0 if rank == "Species" else (1 if rank == "Genus" else 2)
+                            syn_score = 1 if is_syn else 0
+                            return (name_match, rank_score, syn_score)
                     
                     sorted_items = sorted(items, key=sort_key)
                     match = sorted_items[0]
@@ -680,7 +700,7 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
                     taxon_info["taxon_id"] = match.get("id")
                     taxon_info["full_name"] = attrs.get("name", raw_query)
                     taxon_info["taxon_name"] = attrs.get("taxon_name", raw_query)
-                    taxon_info["rank"] = "Liik" if attrs.get("taxon_rank") == "Species" else attrs.get("taxon_rank", "Liik")
+                    taxon_info["rank"] = "Perekond" if attrs.get("taxon_rank") == "Genus" else ("Liik" if attrs.get("taxon_rank") == "Species" else attrs.get("taxon_rank", "Liik"))
                     taxon_info["vernacular_name"] = attrs.get("vernacular_name", "")
                     
                     taxa_cache[raw_query] = taxon_info
