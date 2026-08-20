@@ -386,7 +386,10 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "puidu-sametkõrges": "Flammulina velutipes",
         "puidu sametkõrges": "Flammulina velutipes",
         "sametkõrges": "Flammulina velutipes",
-        "kivipuravik": "Boletus edulis"
+        "kivipuravik": "Boletus edulis",
+        "männitaelik": "Porodaedalea pini",
+        "männi-taelik": "Porodaedalea pini",
+        "mannitaelik": "Porodaedalea pini"
     }
 
     # 1. ClipSnippet laiendused
@@ -435,12 +438,27 @@ def load_local_taxa_mappings() -> Dict[str, str]:
                 if est and lat:
                     mapping[est] = lat
                     mapping[est.replace("-", " ")] = lat
-                    mapping[est.replace(" ", "-")] = lat
-                    mapping[est.replace(" ", "")] = lat
-                    mapping[est.replace("-", "")] = lat
             conn.close()
         except Exception:
             pass
+
+    # Autoriiteetsed ülekaalukad vastavused (uuendatud taksonoomia)
+    overrides = {
+        "kimp metskõrges": "Connopus acervatus",
+        "kimp-metskõrges": "Connopus acervatus",
+        "kimpkõrges": "Connopus acervatus",
+        "kimp-kõrges": "Connopus acervatus",
+        "kimp kõrges": "Connopus acervatus",
+        "puidu-sametkõrges": "Flammulina velutipes",
+        "puidu sametkõrges": "Flammulina velutipes",
+        "sametkõrges": "Flammulina velutipes",
+        "kivipuravik": "Boletus edulis",
+        "männitaelik": "Porodaedalea pini",
+        "männi-taelik": "Porodaedalea pini",
+        "mannitaelik": "Porodaedalea pini"
+    }
+    for k, v in overrides.items():
+        mapping[k] = v
 
     return mapping
 
@@ -714,18 +732,21 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
                         vern = at.get("vernacular_name", "").strip().lower()
                         is_syn = at.get("is_synonym", False)
                         
-                        sci_exact = 0 if (tname == clean_norm or fname.startswith(clean_norm + " ") or fname == clean_norm) else (1 if clean_norm in fname else 2)
-                        vern_exact = 0 if (vern == clean_norm) else (1 if (vern and clean_norm in vern) else 2)
+                        sci_targets = [clean_norm, scientific_search.lower() if scientific_search else ""]
+                        sci_exact = 0 if any(tname == st or fname.startswith(st + " ") or fname == st for st in sci_targets if st) else (1 if any(st in fname for st in sci_targets if st) else 2)
+                        
+                        vern_targets = [norm_query, raw_query.lower(), clean_norm]
+                        vern_exact = 0 if any(vern == vt for vt in vern_targets if vt) else (1 if any(vt in vern for vt in vern_targets if vt and len(vt) > 2) else 2)
                         name_match = min(sci_exact, vern_exact)
+
+                        syn_score = 1 if is_syn else 0
 
                         if genus_mode:
                             rank_score = 0 if rank == "Genus" else (1 if rank == "Species" else 2)
-                            syn_score = 1 if is_syn else 0
-                            return (rank_score, name_match, syn_score)
+                            return (syn_score, rank_score, name_match)
                         else:
                             rank_score = 0 if rank == "Species" else (1 if rank == "Genus" else 2)
-                            syn_score = 1 if is_syn else 0
-                            return (name_match, rank_score, syn_score)
+                            return (syn_score, name_match, rank_score)
                     
                     sorted_items = sorted(items, key=sort_key)
                     match = sorted_items[0]
@@ -882,6 +903,63 @@ def clean_cli_arg(arg: str) -> str:
     return cleaned.strip("\"' \t\r\n")
 
 
+def normalize_cli_args(args_list: List[str]) -> List[str]:
+    """Ühendab tühikutega eraldatud lipud (nt ['o', ':üksikud'], ['o', ':', 'üksikud'], ['o:', 'üksikud'])."""
+    known_prefixes = {
+        "substraat", "subst", "sub", "s",
+        "tüüp", "tyyp", "type", "t",
+        "ohtrus", "oht", "abund", "o",
+        "kaasvaatleja", "kaasvaatlejad", "kaaslane", "kaaslased", "kaasv", "kaas", "co", "kv",
+        "märkus", "markus", "märkused", "note", "notes", "m"
+    }
+    
+    normalized = []
+    i = 0
+    while i < len(args_list):
+        arg = clean_cli_arg(args_list[i])
+        if not arg:
+            i += 1
+            continue
+            
+        arg_lower = arg.lower()
+        
+        # Juhtum 1: 'o' järgmise argumendiga ':üksikud' või ':' ja 'üksikud'
+        if arg_lower in known_prefixes and i + 1 < len(args_list):
+            next_arg = clean_cli_arg(args_list[i + 1])
+            if next_arg.startswith(":") and len(next_arg) > 1:
+                # nt 'o' ja ':üksikud' -> 'o:üksikud'
+                normalized.append(f"{arg}:{next_arg[1:].strip()}")
+                i += 2
+                continue
+            elif next_arg == ":" and i + 2 < len(args_list):
+                # nt 'o' ja ':' ja 'üksikud' -> 'o:üksikud'
+                val_arg = clean_cli_arg(args_list[i + 2])
+                normalized.append(f"{arg}:{val_arg.strip()}")
+                i += 3
+                continue
+            elif not next_arg.startswith(":") and not os.path.exists(next_arg) and "/" not in next_arg:
+                # Kui lipp on 's' / 't' / 'o' ja järgmine argument on teadaolev väärtus (nt 'o üksikud', 's kuusk')
+                if (arg_lower in ["s", "sub", "subst", "substraat"] and next_arg.lower() in SUBSTRATE_MAP) or \
+                   (arg_lower in ["t", "tüüp", "tyyp", "type"] and next_arg.lower() in TYPE_MAP) or \
+                   (arg_lower in ["o", "oht", "ohtrus"] and next_arg.lower() in ABUNDANCE_MAP):
+                    normalized.append(f"{arg}:{next_arg}")
+                    i += 2
+                    continue
+        
+        # Juhtum 2: 'o:' ja järgmine argument 'üksikud'
+        if arg_lower.endswith(":") and arg_lower[:-1] in known_prefixes and i + 1 < len(args_list):
+            next_arg = clean_cli_arg(args_list[i + 1])
+            if not next_arg.startswith("-"):
+                normalized.append(f"{arg}{next_arg}")
+                i += 2
+                continue
+                
+        normalized.append(arg)
+        i += 1
+        
+    return normalized
+
+
 def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]]:
     files = []
     flags = {
@@ -898,8 +976,9 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
     expecting_co = False
 
     valid_exts = (".jpg", ".jpeg", ".heic", ".png", ".webp", ".zip")
+    clean_args = normalize_cli_args(args_list)
 
-    for arg in args_list:
+    for arg in clean_args:
         arg_clean = clean_cli_arg(arg)
         if not arg_clean:
             continue
