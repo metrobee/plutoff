@@ -862,27 +862,28 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             continue
 
         lower_arg = arg_clean.lower()
-        if any(lower_arg.startswith(prefix) for prefix in ["substraat:", "sub:", "subst:"]):
-            val = arg_clean.split(":", 1)[1].strip()
+        clean_lower = lower_arg.lstrip(":")
+        if any(clean_lower.startswith(prefix) for prefix in ["substraat:", "sub:", "subst:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             mapped = SUBSTRATE_MAP.get(val.lower())
             if mapped:
                 flags["substraat_nimi"] = mapped[0]
                 flags["substraat_taxon_id"] = mapped[1]
             else:
                 flags["substraat_nimi"] = val
-        elif any(lower_arg.startswith(prefix) for prefix in ["tüüp:", "tyyp:", "type:"]):
-            val = arg_clean.split(":", 1)[1].strip()
+        elif any(clean_lower.startswith(prefix) for prefix in ["tüüp:", "tyyp:", "type:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             mapped = TYPE_MAP.get(val.lower())
             if mapped:
                 flags["tüüp_nimi"] = mapped[0]
                 flags["tüüp_id"] = mapped[1]
             else:
                 flags["tüüp_nimi"] = val
-        elif any(lower_arg.startswith(prefix) for prefix in ["ohtrus:", "oht:", "abund:"]):
-            val = arg_clean.split(":", 1)[1].strip()
+        elif any(clean_lower.startswith(prefix) for prefix in ["ohtrus:", "oht:", "abund:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             flags["ohtrus"] = ABUNDANCE_MAP.get(val.lower(), val)
-        elif any(lower_arg.startswith(prefix) for prefix in ["kaasv:", "kaasvaatleja:", "kaaslane:", "kaaslased:", "kaas:", "co:"]):
-            val = arg_clean.split(":", 1)[1].strip()
+        elif any(clean_lower.startswith(prefix) for prefix in ["kv:", "kaasv:", "kaasvaatleja:", "kaaslane:", "kaaslased:", "kaas:", "co:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             parts = [p.strip() for p in val.split(",") if p.strip()]
             for p in parts:
                 p_lower = p.lower()
@@ -891,8 +892,8 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
                     flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
                 else:
                     flags["kaasvaatlejad"].append({"name": p, "id": None})
-        elif any(lower_arg.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:"]):
-            val = arg_clean.split(":", 1)[1].strip()
+        elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             flags["märkus"] = val
         else:
             taxon_words.append(arg_clean)
