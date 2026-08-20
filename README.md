@@ -1,7 +1,7 @@
 # PlutoFF (`seen`)
 
-> **Professionaalne, ülikiire ja automatiseeritud CLI tööriist seenevaatluste edastamiseks PlutoF / eElurikkuse ametlikku andmebaasi.** 
-> *(Nimi: **PlutoFF** – viimane **F** nagu **Fungi** )*
+> **Professionaalne, ülikiire ja automatiseeritud CLI tööriist seenevaatluste edastamiseks PlutoF / eElurikkuse ametlikku andmebaasi.**  
+> *(Nimi: **PlutoFF** – viimane **F** nagu **Fungi**)*
 
 ![PlutoFF Demo](docs/demo.gif)
 
@@ -18,7 +18,7 @@ brew tap metrobee/tap
 brew install seen
 ```
 
-*Valmis! Pärast seda on käsk `seen` koheselt sinu terminalis kasutatav.*
+*Valmis! Pärast seda on käsk `seen` koheselt sinu terminalis kasutatav koos täieliku Tab-täienduse toega.*
 
 ---
 
@@ -31,16 +31,21 @@ cd plutoff
 ./install.sh
 ```
 
-### Windows
+### Windows (PowerShell / CMD)
 ```cmd
 git clone https://github.com/metrobee/plutoff.git
 cd plutoff
 install.bat
 ```
 
+*Windows PowerShellis Tab-täienduse aktiveerimiseks:*
+```powershell
+. .\completions\seen.ps1
+```
+
 ---
 
-## ⚙️ Seadistamine (`~/.plutof_env`)
+## Seadistamine (`~/.plutof_env`)
 
 Loo oma kodukausta fail `~/.plutof_env` (või Windowsis `%USERPROFILE%\.plutof_env`):
 
@@ -55,16 +60,27 @@ PLUTOF_PASSWORD=sinu_parool
 
 ---
 
-## ⚡️ Põhifunktsioonid
+## Tab-klahviga automaatne täiendus (Autocompletion)
+
+Käsk toetab nutikat Tab-täiendust kõigil platvormidel (macOS Zsh, Linux Bash, Windows PowerShell).
+
+Kui trükid terminali parameetri eesliite ja vajutad **Tab**-klahvi:
+- `sub:` + **Tab** -> kuvab toetatud puuliigid (`kuusk`, `mänd`, `kask`, `haab`, `tamm`, `saar` jne).
+- `tyyp:` + **Tab** -> kuvab substraadi tüübid (`lamatüvi`, `känd`, `tüügas`, `lamaoks`, `elavpuu`, `kõdupuit`, `muld` jne).
+- `ohtrus:` + **Tab** -> kuvab ohtruse astmed (`üksikud`, `vähe`, `mõõdukalt`, `sage`, `palju`, `massiliselt`).
+
+---
+
+## Põhifunktsioonid
 
 1. **Vahetu sisestamine lohistades:** Lohista fotod või `.zip` arhiiv otse terminali – skript loeb EXIF-ist täpsed GPS-koordinaadid, kõrguse ja kuupäeva.
 2. **Kahesuunaline taksonoomia otsing:** Tuvastab liiginimesid korraga nii eesti keeles (`pehmepoorik`, `harunev korallnarmik`) kui ladina keeles (`Sarcoporia polyspora`).
 3. **Vormi 72 mõõtmiste ja substraatide tugi:** Määrab automaatselt puuliigi (*Picea abies*, *Pinus sylvestris* jne), substraadi tüübi (*lamatüvi*, *känd*, *tüügas*), asustusviisi (*Looduses*) ja ohtruse (*Üksikud*, *Vähe*, *Sage*, *Ohtralt*).
 4. **3-tasandiline duplikaatide blokeering:**
- - **Tase 1 (SHA-256):** Kaitseb failisisu topeltlaadimise eest.
- - 📄 **Tase 2 (Failinimi):** Tuvastab varem kasutatud pildinimed (`PXL_...`).
- - **Tase 3 (EXIF aeg + GPS):** Hoiab ära sama hetke ja asukoha duplikaadid.
-5. **Automaatne failikoristus:** Pärast edukat API-kinnitust liigutatakse allalaaditud pildid või `.zip` fail automaatselt macOS-i Prügikasti (*Trash*), tagades puhta `Downloads` kausta.
+   - **Tase 1 (SHA-256):** Kaitseb failisisu topeltlaadimise eest.
+   - **Tase 2 (Failinimi):** Tuvastab varem kasutatud pildinimed (`PXL_...`).
+   - **Tase 3 (EXIF aeg + GPS):** Hoiab ära sama hetke ja asukoha duplikaadid.
+5. **Automaatne failikoristus:** Pärast edukat API-kinnitust liigutatakse allalaaditud pildid või `.zip` fail automaatselt süsteemsesse Prügikasti (*Trash*), tagades puhta `Downloads` kausta.
 6. **Reaalajas kohalik andmebaas:** Salvestab vaatlused lokaalsesse SQLite andmebaasi (`plutof_vaatlused.db`) ja JSON-faili.
 
 ---
@@ -102,15 +118,15 @@ seen --help
 
 | Parameeter | Valikud | Selgitus |
 | :--- | :--- | :--- |
-| `sub:` või `substraat:` | `kuusk`, `mänd`, `kask`, `haab`, `lepp`, `tamm`, `saar`, `sarapuu` | Substraadi puuliik |
-| `tüüp:` või `tyyp:` | `lamatüvi`, `känd`, `tüügas`, `lamaoks`, `elavpuu`, `kõdupuit`, `muld` | Substraadi kuju/seisund |
-| `ohtrus:` | `üksikud`, `vähe`, `sage`, `palju`, `massiliselt` | Viljakehade rohkus |
+| `sub:` või `substraat:` | `kuusk`, `mänd`, `kask`, `haab`, `lepp`, `tamm`, `saar`, `sarapuu`, `vaher`, `pärn` | Substraadi puuliik |
+| `tyyp:` või `tüüp:` | `lamatüvi`, `känd`, `tüügas`, `lamaoks`, `elavpuu`, `kõdupuit`, `kõdu`, `okkad`, `lehed`, `muld` | Substraadi kuju/seisund |
+| `ohtrus:` | `üksikud`, `vähe`, `mõõdukalt`, `sage`, `palju`, `massiliselt` | Viljakehade rohkus |
 | `märkus:` | `märkus:tekst` | Vabatekstiline lisamärkus |
-| `--keep` | | Jätab algse faili Downloads kausta alles |
+| `--keep` | | Jätab algse faili kausta alles (ei kustuta) |
 | `--force` | | Lubab teadlikult varem saadetud foto uuesti saata |
 
 ---
 
-## 📄 Litsents
+## Litsents
 
-MIT License. Vabalt kasutatav kõigile mükoloogidele ja loodushuvilistele! 
+MIT License. Vabalt kasutatav kõigile mükoloogidele ja loodushuvilistele.
