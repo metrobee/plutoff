@@ -47,16 +47,28 @@ install.bat
 
 ## Seadistamine (`~/.plutof_env`)
 
-Loo oma kodukausta fail `~/.plutof_env` (või Windowsis `%USERPROFILE%\.plutof_env`):
+1. **Loo PlutoF portaalis OAuth2 rakendus:**
+   - Logi sisse aadressil [https://app.plutof.ut.ee](https://app.plutof.ut.ee)
+   - Vali vasakult menüüst või profiili alt **OAuth2 Applications** (või otselink: `https://app.plutof.ut.ee/oauth/applications/`)
+   - Kliki **New Application** / **Lisa rakendus**:
+     - **Name:** `plutoff` (või suvaline nimi)
+     - **Client type:** `Confidential`
+     - **Authorization grant type:** `Resource owner password-based`
+     - **Redirect uris:** jäta tühjaks või määra `https://localhost`
+
+2. **KRIITILINE TÄHELEPANEK (Võtmete kopeerimine):**
+   > **TÄHTIS:** Kopeeri **Client ID** ja **Client Secret** KOHE loomise hetkel!  
+   > PlutoF süsteemi eripära tõttu kuvatakse `Client Secret` selgel kujul ainult loomisel. Kui hiljem rakenduse seadetes klikkida *Edit* või *Save*, kirjutab süsteem salavõtme üle ja eelmine võti lakkab töötamast.
+
+3. **Salvesta andmed faili `~/.plutof_env`:**
+   Loo oma kodukausta fail `~/.plutof_env` (Windowsis `%USERPROFILE%\.plutof_env`):
 
 ```env
-PLUTOF_CLIENT_ID=sinu_client_id
-PLUTOF_CLIENT_SECRET=sinu_client_secret
-PLUTOF_USERNAME=sinu_kasutajanimi_voi_email
-PLUTOF_PASSWORD=sinu_parool
+PLUTOF_CLIENT_ID=sinu_kopeeritud_client_id
+PLUTOF_CLIENT_SECRET=sinu_kopeeritud_client_secret
+PLUTOF_USERNAME=sinu_plutof_kasutajanimi_voi_email
+PLUTOF_PASSWORD=sinu_plutof_parool
 ```
-
-*(Tasuta API võtmed saad luua PlutoF portaalis aadressil https://app.plutof.ut.ee oma konto seadete alt).*
 
 ---
 
