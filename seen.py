@@ -592,11 +592,13 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         "kingdom": "Fungi"
     }
 
-    urls_to_try = [
-        f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(raw_query)}",
-        f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(scientific_search)}",
-        f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(raw_query)}"
-    ]
+    urls_to_try = []
+    if scientific_search and scientific_search != raw_query:
+        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(scientific_search)}")
+        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(scientific_search)}")
+    
+    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(raw_query)}")
+    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(raw_query)}")
 
     for url in urls_to_try:
         try:
@@ -610,10 +612,13 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
                 if items:
                     def sort_key(it):
                         at = it.get("attributes", {})
+                        tname = at.get("taxon_name", "").lower()
+                        # Kui meil on teaduslik vaste, siis see on absoluutne prioriteet 0
+                        sci_match = 0 if (scientific_search and scientific_search.lower() in tname) else 1
                         rank_score = 0 if at.get("taxon_rank") == "Species" else 1
                         syn_score = 1 if at.get("is_synonym") else 0
                         vern_score = 0 if at.get("vernacular_name", "").lower() == norm_query else 1
-                        return (rank_score, syn_score, vern_score)
+                        return (sci_match, rank_score, syn_score, vern_score)
                     
                     sorted_items = sorted(items, key=sort_key)
                     match = sorted_items[0]
