@@ -842,6 +842,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
         "force": False
     }
     taxon_words = []
+    expecting_co = False
 
     valid_exts = (".jpg", ".jpeg", ".heic", ".png", ".webp", ".zip")
 
@@ -851,14 +852,17 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             continue
         if arg_clean == "--force":
             flags["force"] = True
+            expecting_co = False
             continue
         if arg_clean in ["--keep", "-k", "keep"]:
             flags["keep"] = True
+            expecting_co = False
             continue
 
         if os.path.isfile(arg_clean) or arg_clean.lower().endswith(valid_exts) or ("/" in arg_clean and os.path.exists(arg_clean)):
             if os.path.exists(arg_clean):
                 files.append(arg_clean)
+            expecting_co = False
             continue
 
         lower_arg = arg_clean.lower()
@@ -871,6 +875,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
                 flags["substraat_taxon_id"] = mapped[1]
             else:
                 flags["substraat_nimi"] = val
+            expecting_co = False
         elif any(clean_lower.startswith(prefix) for prefix in ["tüüp:", "tyyp:", "type:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             mapped = TYPE_MAP.get(val.lower())
@@ -879,9 +884,11 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
                 flags["tüüp_id"] = mapped[1]
             else:
                 flags["tüüp_nimi"] = val
+            expecting_co = False
         elif any(clean_lower.startswith(prefix) for prefix in ["ohtrus:", "oht:", "abund:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             flags["ohtrus"] = ABUNDANCE_MAP.get(val.lower(), val)
+            expecting_co = False
         elif any(clean_lower.startswith(prefix) for prefix in ["kv:", "kaasv:", "kaasvaatleja:", "kaaslane:", "kaaslased:", "kaas:", "co:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             parts = [p.strip() for p in val.split(",") if p.strip()]
@@ -892,11 +899,23 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
                     flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
                 else:
                     flags["kaasvaatlejad"].append({"name": p, "id": None})
+            expecting_co = val.endswith(",") or arg_clean.endswith(",")
+        elif expecting_co or (lower_arg.rstrip(",") in CO_OBSERVERS_MAP and flags["kaasvaatlejad"]):
+            # Jätk eelmisest kaasvaatlejate lipust tühiku tõttu (nt 'kv:aa, vl')
+            clean_token = lower_arg.rstrip(",")
+            if clean_token in CO_OBSERVERS_MAP:
+                c_name, c_id = CO_OBSERVERS_MAP[clean_token]
+                flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
+            else:
+                flags["kaasvaatlejad"].append({"name": arg_clean.rstrip(","), "id": None})
+            expecting_co = arg_clean.endswith(",")
         elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             flags["märkus"] = val
+            expecting_co = False
         else:
             taxon_words.append(arg_clean)
+            expecting_co = False
 
     taxon_name = " ".join(taxon_words).strip()
     return taxon_name, files, flags
