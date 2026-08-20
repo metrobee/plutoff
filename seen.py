@@ -455,7 +455,12 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "kivipuravik": "Boletus edulis",
         "männitaelik": "Porodaedalea pini",
         "männi-taelik": "Porodaedalea pini",
-        "mannitaelik": "Porodaedalea pini"
+        "mannitaelik": "Porodaedalea pini",
+        "hiirkäbik": "Baeospora myosura",
+        "hiir-käbik": "Baeospora myosura",
+        "hiirkabik": "Baeospora myosura",
+        "käbik": "Baeospora",
+        "kabik": "Baeospora"
     }
     for k, v in overrides.items():
         mapping[k] = v
@@ -679,7 +684,7 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         genus_mode = True
         clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', clean_query, flags=re.IGNORECASE).strip()
         clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', scientific_search, flags=re.IGNORECASE).strip()
-    elif " " not in norm_query and (not scientific_search or scientific_search == raw_query):
+    elif " " not in scientific_search.strip():
         genus_mode = True
 
     clean_norm = clean_query.lower()
