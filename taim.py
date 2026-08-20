@@ -12,7 +12,6 @@ Kasutamine:
 import os
 import sys
 import json
-import math
 import uuid
 import sqlite3
 import hashlib
@@ -22,7 +21,8 @@ import urllib.parse
 import subprocess
 from typing import Dict, Any, List, Optional, Tuple
 
-DB_PATH = "/Users/metrobee/GEMINI/data/plutof_vaatlused.db"
+LOCAL_OBS_DB = "/Users/metrobee/GEMINI/data/plutof_vaatlused.db"
+LOCAL_OBS_JSON = "/Users/metrobee/GEMINI/data/plutof_vaatlused.json"
 CACHE_FILE = "/Users/metrobee/.plutof_geo_cache.json"
 TAXA_CACHE_FILE = "/Users/metrobee/.plutof_plant_taxa_cache.json"
 CREDENTIALS_FILE = os.path.expanduser("~/.plutof_env")
@@ -39,19 +39,46 @@ def load_credentials() -> Dict[str, str]:
     return creds
 
 def get_plutof_token(creds: Dict[str, str]) -> str:
-    url = "https://api.plutof.ut.ee/v1/oauth2/token/"
-    data = urllib.parse.urlencode({
+    ep = "https://api.plutof.ut.ee/v1/public/auth/token/"
+    payload = {
         "grant_type": "password",
-        "client_id": creds.get("PLUTOF_CLIENT_ID", ""),
-        "client_secret": creds.get("PLUTOF_CLIENT_SECRET", ""),
-        "username": creds.get("PLUTOF_USERNAME", ""),
-        "password": creds.get("PLUTOF_PASSWORD", "")
-    }).encode("utf-8")
-
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
+        "client_id": creds["PLUTOF_CLIENT_ID"],
+        "client_secret": creds["PLUTOF_CLIENT_SECRET"],
+        "username": creds["PLUTOF_USERNAME"],
+        "password": creds["PLUTOF_PASSWORD"]
+    }
+    data = urllib.parse.urlencode(payload).encode("utf-8")
+    req = urllib.request.Request(ep, data=data, headers={"User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
         res = json.loads(resp.read().decode("utf-8"))
         return res["access_token"]
+
+def get_user_person_id(token: str) -> str:
+    url = "https://api.plutof.ut.ee/v1/public/user-profile/"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
+        "Authorization": f"Bearer {token}"
+    })
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        return str(data["data"]["relationships"]["person"]["data"]["id"])
+
+def get_country_id(country_name: str, token: str) -> str:
+    if country_name.lower() in ["eesti", "estonia"]:
+        return "47"
+    url = f"https://api.plutof.ut.ee/v1/public/countries/autocomplete/?name={urllib.parse.quote(country_name)}"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
+        "Authorization": f"Bearer {token}"
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("data"):
+                return str(data["data"][0]["id"])
+    except Exception:
+        pass
+    return "47"
 
 def get_sha256(filepath: str) -> str:
     h = hashlib.sha256()
@@ -83,13 +110,14 @@ def get_decimal_from_dms(dms, ref: str) -> Optional[float]:
 def extract_exif(image_path: str) -> Dict[str, Any]:
     exif_data = {
         "date_time": None,
+        "date_iso": None,
         "latitude": None,
         "longitude": None,
-        "altitude": None
+        "altitude": None,
+        "wkt_point": None
     }
     ext = os.path.splitext(image_path)[1].lower()
     
-    # Kui on HEIC, loeme mdls abil või teisendame ajutiselt
     if ext in [".heic", ".heif"]:
         try:
             res_date = subprocess.run(["mdls", "-name", "kMDItemContentCreationDate", "-raw", image_path], capture_output=True, text=True)
@@ -127,6 +155,18 @@ def extract_exif(image_path: str) -> Dict[str, Any]:
     except Exception:
         pass
 
+    if exif_data["date_time"]:
+        try:
+            parts = exif_data["date_time"].split(" ")
+            d_part = parts[0].replace(":", "-")
+            t_part = parts[1] if len(parts) > 1 else "12:00:00"
+            exif_data["date_iso"] = f"{d_part}T{t_part}"
+        except Exception:
+            pass
+
+    if exif_data["latitude"] is not None and exif_data["longitude"] is not None:
+        exif_data["wkt_point"] = f"SRID=4326;POINT ({exif_data['longitude']} {exif_data['latitude']})"
+
     return exif_data
 
 def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
@@ -146,6 +186,7 @@ def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
         "country": "Eesti",
         "county": "",
         "commune": "",
+        "municipality": "",
         "locality": "",
         "full_area_name": ""
     }
@@ -159,6 +200,7 @@ def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
             geo_data["country"] = addr.get("country", "Eesti")
             geo_data["county"] = addr.get("county", addr.get("state", ""))
             geo_data["commune"] = addr.get("municipality", addr.get("city", addr.get("town", addr.get("village", ""))))
+            geo_data["municipality"] = geo_data["commune"]
             geo_data["locality"] = addr.get("village", addr.get("suburb", addr.get("hamlet", addr.get("neighbourhood", ""))))
             
             parts = [geo_data["country"]]
@@ -166,6 +208,8 @@ def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
                 parts.append(geo_data["county"])
             if geo_data["commune"]:
                 parts.append(geo_data["commune"])
+            if geo_data["locality"] and geo_data["locality"] != geo_data["commune"]:
+                parts.append(geo_data["locality"])
             geo_data["full_area_name"] = ", ".join(parts)
             cache[cache_key] = geo_data
             with open(CACHE_FILE, "w", encoding="utf-8") as f:
@@ -233,37 +277,73 @@ def move_to_trash(filepath: str) -> bool:
         subprocess.run(["osascript", "-e", cmd], check=True, capture_output=True)
         return True
     except Exception:
-        return False
+        try:
+            abs_path = os.path.abspath(filepath)
+            if ".photoslibrary" in abs_path or "Photos Library" in abs_path:
+                return False
+            trash_dir = os.path.expanduser("~/.Trash")
+            dest = os.path.join(trash_dir, os.path.basename(filepath))
+            if os.path.exists(dest):
+                base, ext = os.path.splitext(os.path.basename(filepath))
+                dest = os.path.join(trash_dir, f"{base}_{int(datetime.datetime.now().timestamp())}{ext}")
+            os.rename(filepath, dest)
+            return True
+        except Exception:
+            return False
 
 def upload_file_to_plutof(filepath: str, token: str) -> Tuple[str, str]:
     boundary = uuid.uuid4().hex
     content_type = f"multipart/form-data; boundary={boundary}"
+
     body = []
     body.append(f"--{boundary}".encode())
-    fn = os.path.basename(filepath)
-    body.append(f'Content-Disposition: form-data; name="file"; filename="{fn}"'.encode())
-    body.append(b"Content-Type: image/jpeg")
-    body.append(b"")
+    body.append(f'Content-Disposition: form-data; name="upload"; filename="{os.path.basename(filepath)}"'.encode())
+    body.append(b"Content-Type: image/jpeg\r\n")
     with open(filepath, "rb") as f:
         body.append(f.read())
+
+    body.append(f"--{boundary}".encode())
+    body.append(b'Content-Disposition: form-data; name="is_public"\r\n')
+    body.append(b"true")
+
     body.append(f"--{boundary}--".encode())
     body.append(b"")
-    payload = b"\r\n".join(body)
+
+    payload_bytes = b"\r\n".join(body)
 
     url = "https://api.plutof.ut.ee/v1/public/files/"
-    req = urllib.request.Request(url, data=payload, headers={
+    req = urllib.request.Request(url, data=payload_bytes, headers={
+        "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
         "Authorization": f"Bearer {token}",
-        "Content-Type": content_type,
-        "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)"
-    }, method="POST")
-
-    with urllib.request.urlopen(req, timeout=45) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        data = res.get("data", {})
-        file_id = data.get("id", "")
-        attrs = data.get("attributes", {})
-        s3_url = attrs.get("url", "")
-        return str(file_id), s3_url
+        "Content-Type": content_type
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            fid = str(res["data"]["id"])
+            dlinks = res["data"].get("attributes", {}).get("download_links", {})
+            s3_url = dlinks.get("large_link") or dlinks.get("orig_link") or ""
+            return fid, s3_url
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="ignore")
+        try:
+            err_json = json.loads(err_body)
+            for err in err_json.get("errors", []):
+                if "already have a file" in err.get("message", "").lower() and err.get("id"):
+                    fid = str(err["id"])
+                    s3_url = ""
+                    try:
+                        f_req = urllib.request.Request(f"https://api.plutof.ut.ee/v1/public/files/{fid}/", headers={"User-Agent": "PlutoFObservationAssistant/1.0"})
+                        with urllib.request.urlopen(f_req, timeout=10) as f_resp:
+                            f_d = json.loads(f_resp.read().decode("utf-8"))
+                            f_links = f_d.get("data", {}).get("attributes", {}).get("download_links", {})
+                            s3_url = f_links.get("large_link") or f_links.get("orig_link") or ""
+                    except Exception:
+                        pass
+                    return fid, s3_url
+        except Exception:
+            pass
+        raise e
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ["--help", "-h"]:
@@ -273,7 +353,7 @@ KASUTAMINE:
 
 NÄITED:
   taim harilik jugapuu [kopeeri_või_lohista_foto]
-  taim "harilik pärn" /tee/pildini.HEIC elupaik:park ohtrus:üksikud olek:viljub märkus:"Kärdla keskväljak"
+  taim "harilik jugapuu" /tee/pildini.HEIC elupaik:park ohtrus:üksikud olek:viljub märkus:"Kärdla keskväljak"
         """)
         sys.exit(0)
 
@@ -282,10 +362,9 @@ NÄITED:
         print("VIGA: ~/.plutof_env volitused puuduvad.", file=sys.stderr)
         sys.exit(1)
 
-    # Parsime argumendid
     plant_query_parts = []
     file_paths = []
-    flags = {}
+    flags = {"elupaik": "", "ohtrus": "", "olek": "", "märkus": ""}
 
     for arg in sys.argv[1:]:
         arg_clean = arg.strip().strip("'\"")
@@ -315,13 +394,12 @@ NÄITED:
     print(f" PlutoF takson: {taxon_info['full_name']} (ID: {taxon_info['taxon_id'] or 'Tundmatu'})")
 
     # 2. Metaandmed fotodelt
-    exif = {"date_time": None, "latitude": None, "longitude": None}
+    exif = {"date_time": None, "date_iso": None, "latitude": None, "longitude": None, "wkt_point": None}
     processed_photos = []
-    
+
     for fp in file_paths:
         ext = os.path.splitext(fp)[1].lower()
         work_fp = fp
-        # Kui on HEIC, konverteerime turvaliselt ajutisse JPEG-i
         if ext in [".heic", ".heif"]:
             tmp_jpg = f"/tmp/{uuid.uuid4().hex}.jpg"
             subprocess.run(["sips", "-s", "format", "jpeg", fp, "--out", tmp_jpg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -331,21 +409,20 @@ NÄITED:
             img_exif = extract_exif(fp)
             if img_exif["date_time"] and not exif["date_time"]:
                 exif["date_time"] = img_exif["date_time"]
+                exif["date_iso"] = img_exif["date_iso"]
             if img_exif["latitude"] and not exif["latitude"]:
                 exif["latitude"] = img_exif["latitude"]
                 exif["longitude"] = img_exif["longitude"]
+                exif["wkt_point"] = img_exif["wkt_point"]
         
         processed_photos.append(work_fp)
 
-    # Vaikimisi aeg kui puudub
     if not exif["date_time"]:
         exif["date_time"] = datetime.datetime.now().strftime("%Y:%m:%d %H:%M:%S")
-    
-    # Kuupäeva formaat YYYY-MM-DD
-    dt_parts = exif["date_time"].split()
-    date_str = dt_parts[0].replace(":", "-")
-    time_str = dt_parts[1] if len(dt_parts) > 1 else "12:00:00"
-    iso_date_time = f"{date_str}T{time_str}"
+        exif["date_iso"] = datetime.datetime.now().isoformat().split(".")[0]
+
+    raw_dt = exif["date_time"]
+    timespan_begin = raw_dt.split(" ")[0].replace(":", "-") if " " in raw_dt else datetime.datetime.now().strftime("%Y-%m-%d")
 
     geo = {"country": "Eesti", "county": "", "commune": "", "locality": "", "full_area_name": ""}
     if exif["latitude"] and exif["longitude"]:
@@ -354,6 +431,8 @@ NÄITED:
         print(f" Koordinaadid: {round(exif['latitude'], 6)}, {round(exif['longitude'], 6)} (Aeg: {exif['date_time']})")
 
     token = get_plutof_token(creds)
+    person_id = get_user_person_id(token)
+    country_id = get_country_id(geo.get("country", "Eesti"), token)
 
     # 3. Laeme fotod PlutoF-i
     uploaded_files = []
@@ -362,70 +441,80 @@ NÄITED:
         try:
             fid, s3_url = upload_file_to_plutof(p_path, token)
             uploaded_files.append({"file_id": fid, "s3_url": s3_url, "file_name": os.path.basename(p_path), "sha256": get_sha256(p_path)})
-            print(f"  [{idx}/{len(processed_photos)}] Pilt üles laaditud (ID: {fid})")
+            print(f"  [{idx}/{len(processed_photos)}] Pilt: {os.path.basename(p_path)} ... Valmis (ID: {fid})")
         except Exception as e:
             print(f"  Hoiatus: Pildi üleslaadimine ebaõnnestus: {e}")
 
-    # 4. Saadame vaatluse PlutoF API-sse
-    obs_payload = {
-        "data": {
-            "type": "Observation",
-            "attributes": {
-                "date_time": iso_date_time,
-                "date_time_accuracy": "Day",
-                "notes": flags.get("märkus", flags.get("notes", "")),
-                "is_public": True
-            },
-            "relationships": {}
+    # 4. Koostame märkused ja tunnused
+    remarks_list = []
+    if flags["elupaik"]:
+        remarks_list.append(f"Elupaik: {flags['elupaik']}")
+    if flags["olek"]:
+        remarks_list.append(f"Fenoloogia: {flags['olek']}")
+    if flags["ohtrus"]:
+        remarks_list.append(f"Ohtrus: {flags['ohtrus']}")
+    if flags["märkus"]:
+        remarks_list.append(flags["märkus"])
+
+    full_remarks = " | ".join(remarks_list)
+
+    obs_attrs = {
+        "is_public": True,
+        "timespan_begin": timespan_begin,
+        "timespan_begin_format": "YYYY-MM-DD",
+        "locality_text": geo.get("locality", "") or geo.get("full_area_name", ""),
+        "district": geo.get("county", ""),
+        "commune": geo.get("commune", ""),
+        "geom": exif.get("wkt_point", ""),
+        "remarks": full_remarks
+    }
+
+    obs_rels = {
+        "mainform": {
+            "data": {"type": "Form", "id": "73"}
+        },
+        "country": {
+            "data": {"type": "Country", "id": country_id}
+        },
+        "collected_by": {
+            "data": [{"type": "Person", "id": person_id}]
+        },
+        "files": {
+            "data": [{"type": "File", "id": str(u["file_id"])} for u in uploaded_files]
         }
     }
 
-    if taxon_info["taxon_id"]:
-        obs_payload["data"]["relationships"]["taxon_node"] = {
+    if taxon_info.get("taxon_id"):
+        obs_rels["taxon_node"] = {
             "data": {"type": "Taxon", "id": str(taxon_info["taxon_id"])}
         }
 
-    # Asukoht ja koordinaadid
-    if exif["latitude"] and exif["longitude"]:
-        obs_payload["data"]["relationships"]["area"] = {
-            "data": {
-                "type": "Area",
-                "attributes": {
-                    "geometry": f"SRID=4326;POINT ({exif['longitude']} {exif['latitude']})",
-                    "name": geo["full_area_name"] or "Eesti",
-                    "country": geo["country"] or "Eesti",
-                    "state": geo["county"],
-                    "municipality": geo["commune"],
-                    "locality": geo["locality"]
-                }
-            }
+    obs_payload = {
+        "data": {
+            "type": "Observation",
+            "attributes": obs_attrs,
+            "relationships": obs_rels
         }
+    }
 
-    # Meediafailid
-    if uploaded_files:
-        obs_payload["data"]["relationships"]["files"] = {
-            "data": [{"type": "File", "id": str(u["file_id"])} for u in uploaded_files]
-        }
-
-    # POST vaatlus
-    url = "https://api.plutof.ut.ee/v1/public/observations/"
-    req = urllib.request.Request(
-        url,
+    req_obs = urllib.request.Request(
+        "https://api.plutof.ut.ee/v1/public/observations/",
         data=json.dumps(obs_payload).encode("utf-8"),
         headers={
+            "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/vnd.api+json",
-            "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)"
+            "Accept": "application/vnd.api+json"
         },
         method="POST"
     )
 
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req_obs, timeout=20) as resp:
         obs_res = json.loads(resp.read().decode("utf-8"))
-        obs_id = obs_res["data"]["id"]
+        obs_id = str(obs_res.get("data", {}).get("id"))
 
     # 5. Salvestame kohalikku andmebaasi
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(LOCAL_OBS_DB)
     c = conn.cursor()
     c.execute("""
     INSERT OR REPLACE INTO observations 
@@ -434,14 +523,14 @@ NÄITED:
     """, (
         obs_id,
         taxon_info["full_name"],
-        iso_date_time,
+        exif.get("date_iso") or timespan_begin,
         exif["latitude"],
         exif["longitude"],
-        None,
+        exif.get("altitude"),
         geo["locality"] or geo["full_area_name"],
         geo["county"],
         geo["commune"],
-        flags.get("märkus", ""),
+        full_remarks,
         f"https://app.plutof.ut.ee/observation/view/{obs_id}",
         datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "Boris Meldre"
@@ -484,8 +573,8 @@ NÄITED:
 
     print("=" * 80)
     print(f" TAIMEVAATLUS EDUKALT SALVESTATUD PLUTOF ANDMEBAASI!")
-    print(f" PlutoF ID: {obs_id}")
-    print(f" Vaatluse link: https://app.plutof.ut.ee/observation/view/{obs_id}")
+    print(f"🆔 PlutoF ID: {obs_id}")
+    print(f"🔗 Vaatluse link: https://app.plutof.ut.ee/observation/view/{obs_id}")
     print("=" * 80)
 
 if __name__ == "__main__":
