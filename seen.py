@@ -113,6 +113,40 @@ ABUNDANCE_MAP = {
     "massiline": "Massiliselt"
 }
 
+CO_OBSERVERS_MAP = {
+    "aa": ("Allar Antson", "51250"),
+    "allar": ("Allar Antson", "51250"),
+    "antson": ("Allar Antson", "51250"),
+    "iz": ("Irma Zettur", "43966"),
+    "irma": ("Irma Zettur", "43966"),
+    "zettur": ("Irma Zettur", "43966"),
+    "pl": ("Piret Lõhmus", "307"),
+    "piret": ("Piret Lõhmus", "307"),
+    "lõhmus": ("Piret Lõhmus", "307"),
+    "lohmus": ("Piret Lõhmus", "307"),
+    "alm": ("Anne-Liia Maido", "74936"),
+    "am": ("Anne-Liia Maido", "74936"),
+    "anneliia": ("Anne-Liia Maido", "74936"),
+    "maido": ("Anne-Liia Maido", "74936"),
+    "tt": ("Taavi Tatsi", "73640"),
+    "taavi": ("Taavi Tatsi", "73640"),
+    "tatsi": ("Taavi Tatsi", "73640"),
+    "tv": ("Triin Varvas", "44416"),
+    "triin": ("Triin Varvas", "44416"),
+    "varvas": ("Triin Varvas", "44416"),
+    "mp": ("Margit Päkk", "54665"),
+    "margit": ("Margit Päkk", "54665"),
+    "päkk": ("Margit Päkk", "54665"),
+    "pakk": ("Margit Päkk", "54665"),
+    "kp": ("Kadri Pärtel", "255"),
+    "kadri": ("Kadri Pärtel", "255"),
+    "pärtel": ("Kadri Pärtel", "255"),
+    "partel": ("Kadri Pärtel", "255"),
+    "is": ("Irja Saar", "253"),
+    "irja": ("Irja Saar", "253"),
+    "saar": ("Irja Saar", "253")
+}
+
 
 def init_local_db():
     os.makedirs(os.path.dirname(LOCAL_OBS_DB), exist_ok=True)
@@ -160,8 +194,8 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
     
     c.execute("""
     INSERT OR REPLACE INTO observations 
-    (id, taxon_name, taxon_id, vernacular_name, date_time, latitude, longitude, altitude, locality, county, commune, substrate, substrate_type, abundance, remarks, url, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    (id, taxon_name, taxon_id, vernacular_name, date_time, latitude, longitude, altitude, locality, county, commune, substrate, substrate_type, abundance, remarks, url, created_at, collectors, primary_observer, is_co_observer)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, (
         obs_data["id"],
         obs_data.get("taxon_name"),
@@ -179,7 +213,10 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         obs_data.get("abundance"),
         obs_data.get("remarks"),
         obs_data.get("url"),
-        datetime.datetime.now(datetime.timezone.utc).isoformat()
+        datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        obs_data.get("collectors", "Boris Meldre"),
+        "Boris Meldre",
+        0
     ))
 
     for p in photos_data:
@@ -798,6 +835,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
         "tüüp_id": None,
         "ohtrus": "",
         "märkus": "",
+        "kaasvaatlejad": [],
         "force": False
     }
     taxon_words = []
@@ -840,6 +878,16 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
         elif any(lower_arg.startswith(prefix) for prefix in ["ohtrus:", "oht:", "abund:"]):
             val = arg_clean.split(":", 1)[1].strip()
             flags["ohtrus"] = ABUNDANCE_MAP.get(val.lower(), val)
+        elif any(lower_arg.startswith(prefix) for prefix in ["kaasv:", "kaasvaatleja:", "kaaslane:", "kaaslased:", "kaas:", "co:"]):
+            val = arg_clean.split(":", 1)[1].strip()
+            parts = [p.strip() for p in val.split(",") if p.strip()]
+            for p in parts:
+                p_lower = p.lower()
+                if p_lower in CO_OBSERVERS_MAP:
+                    c_name, c_id = CO_OBSERVERS_MAP[p_lower]
+                    flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
+                else:
+                    flags["kaasvaatlejad"].append({"name": p, "id": None})
         elif any(lower_arg.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:"]):
             val = arg_clean.split(":", 1)[1].strip()
             flags["märkus"] = val
@@ -1023,6 +1071,9 @@ def main():
         print(f" Tüüp: {flags['tüüp_nimi']}")
     if flags["ohtrus"]:
         print(f" Ohtrus: {flags['ohtrus']}")
+    if flags["kaasvaatlejad"]:
+        co_display = ", ".join([f"{c['name']} (ID: {c['id']})" if c.get('id') else c['name'] for c in flags["kaasvaatlejad"]])
+        print(f" Kaasvaatlejad: {co_display}")
     if flags["märkus"]:
         print(f" Märkus: {flags['märkus']}")
     print(f" Fotosid kokku: {len(resolved_photo_paths)}")
@@ -1153,7 +1204,9 @@ def main():
             "data": {"type": "Country", "id": country_id}
         },
         "collected_by": {
-            "data": [{"type": "Person", "id": person_id}]
+            "data": [{"type": "Person", "id": person_id}] + [
+                {"type": "Person", "id": str(c["id"])} for c in flags.get("kaasvaatlejad", []) if c.get("id") and str(c["id"]) != str(person_id)
+            ]
         },
         "files": {
             "data": [{"type": "File", "id": fid} for fid in uploaded_file_ids]
@@ -1198,6 +1251,9 @@ def main():
         return
 
     # 6. Salvesta vaatlus ja piltide räsid reaalajas kohalikku andmebaasi
+    co_names = [c["name"] for c in flags.get("kaasvaatlejad", [])]
+    collectors_str = f"Boris Meldre, {', '.join(co_names)}" if co_names else "Boris Meldre"
+
     obs_record = {
         "id": obs_id,
         "taxon_name": taxon_info["full_name"],
@@ -1214,6 +1270,7 @@ def main():
         "substrate_type": flags["tüüp_nimi"],
         "abundance": flags["ohtrus"],
         "remarks": full_remarks,
+        "collectors": collectors_str,
         "url": f"https://app.plutof.ut.ee/observation/view/{obs_id}"
     }
     
