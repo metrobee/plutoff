@@ -215,6 +215,15 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         
     conn.close()
 
+    # Värskenda veebidashboardi andmestikku
+    try:
+        import subprocess
+        exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
+        if os.path.exists(exp_script):
+            subprocess.run([sys.executable, exp_script], capture_output=True)
+    except Exception:
+        pass
+
 
 def check_existing_photo(sha256: str, filename: str = "", date_iso: str = "", lat: float = None, lon: float = None) -> Optional[Dict[str, Any]]:
     """Kontrollib, kas foto SHA-256 räsi, failinimi või täpne EXIF aeg/GPS on juba varem sisestatud."""
@@ -880,32 +889,49 @@ def main():
         print(" Viga: Palun määra seeneliik (eesti või ladina keeles)!", file=sys.stderr)
         return
 
-    # 0. Paki lahti ZIP failid, kui kasutaja lohistas .zip arhiivi
+    # 0. Paki lahti ZIP failid või konverteeri HEIC pildid
     original_files_to_trash = list(file_paths)
     resolved_photo_paths = []
-    import zipfile, tempfile
+    import zipfile, tempfile, subprocess
 
     img_extensions = (".jpg", ".jpeg", ".heic", ".png", ".webp")
 
     for fp in file_paths:
+        # Puhasta terminali kleebitud erimärgid
+        fp = fp.strip().strip("'\"").replace("[200~", "").replace("~", "")
+        if not fp or not os.path.exists(fp):
+            continue
+
         if fp.lower().endswith(".zip") and zipfile.is_zipfile(fp):
             temp_dir = tempfile.mkdtemp(prefix="seen_zip_")
             try:
                 with zipfile.ZipFile(fp, 'r') as z:
                     z.extractall(temp_dir)
-                # Otsi pildifailid rekursiivselt
-                extracted_imgs = []
                 for root, _, fnames in os.walk(temp_dir):
                     for fn in sorted(fnames):
                         if fn.lower().endswith(img_extensions) and not fn.startswith("._") and not fn.startswith("."):
-                            extracted_imgs.append(os.path.join(root, fn))
-                if extracted_imgs:
-                    print(f" Arhiivist '{os.path.basename(fp)}' leitud {len(extracted_imgs)} fotot.")
-                    resolved_photo_paths.extend(extracted_imgs)
-                else:
-                    print(f"  Arhiivist '{os.path.basename(fp)}' ei leitud ühtegi toetatud pildifaili!", file=sys.stderr)
+                            full_p = os.path.join(root, fn)
+                            if full_p.lower().endswith(".heic"):
+                                temp_jpg = os.path.join(temp_dir, f"{os.path.splitext(fn)[0]}.jpg")
+                                subprocess.run(["sips", "-s", "format", "jpeg", full_p, "--out", temp_jpg], capture_output=True)
+                                if os.path.exists(temp_jpg):
+                                    resolved_photo_paths.append(temp_jpg)
+                            else:
+                                resolved_photo_paths.append(full_p)
+                print(f" Arhiivist '{os.path.basename(fp)}' leitud {len(resolved_photo_paths)} fotot.")
             except Exception as e:
-                print(f"  Viga ZIP arhiivi lahtipakkimisel ({fp}): {e}", file=sys.stderr)
+                print(f" Viga ZIP arhiivi lahtipakkimisel ({fp}): {e}", file=sys.stderr)
+        elif fp.lower().endswith(".heic"):
+            # Konverteeri HEIC JPEG-iks
+            temp_jpg = os.path.join(tempfile.gettempdir(), f"{os.path.splitext(os.path.basename(fp))[0]}_{int(datetime.datetime.now().timestamp())}.jpg")
+            try:
+                subprocess.run(["sips", "-s", "format", "jpeg", fp, "--out", temp_jpg], capture_output=True, check=True)
+                if os.path.exists(temp_jpg):
+                    resolved_photo_paths.append(temp_jpg)
+                else:
+                    resolved_photo_paths.append(fp)
+            except Exception:
+                resolved_photo_paths.append(fp)
         else:
             resolved_photo_paths.append(fp)
 
