@@ -768,6 +768,13 @@ def upload_file_to_plutof(filepath: str, token: str) -> Tuple[str, str]:
         raise RuntimeError(f"Faili üleslaadimine ebaõnnestus ({e.code}): {err_body}")
 
 
+def clean_cli_arg(arg: str) -> str:
+    """Eemaldab terminali ja teksti laiendaja (ClipSnippet) bracketed-paste ANSI escape koodid (^[[200~ jne)."""
+    import re
+    cleaned = re.sub(r'(\x1b\[\d+~|\^\[\[\d+~|\[\d+~|\^\[|\x1b)', '', arg)
+    return cleaned.strip("\"' \t\r\n")
+
+
 def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]]:
     files = []
     flags = {
@@ -784,7 +791,9 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
     valid_exts = (".jpg", ".jpeg", ".heic", ".png", ".webp", ".zip")
 
     for arg in args_list:
-        arg_clean = arg.strip("\"'")
+        arg_clean = clean_cli_arg(arg)
+        if not arg_clean:
+            continue
         if arg_clean == "--force":
             flags["force"] = True
             continue
