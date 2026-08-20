@@ -984,17 +984,31 @@ def show_options_table():
   palju       -> Palju (suurem kogumik)
   massiliselt -> Massiliselt (ulatuslik esinemine)
 
- 4. MÄRKUS (märkus:)
+  4. KAASVAATLEJAD (kv: või kaasv:)
+--------------------------------------------------------------------------------
+  aa          -> Allar Antson (ID: 51250)
+  vl          -> Vello Liiv (ID: 19681)
+  iz          -> Irma Zettur (ID: 43966)
+  pl          -> Piret Lõhmus (ID: 307)
+  alm / am    -> Anne-Liia Maido (ID: 74936)
+  tt          -> Taavi Tatsi (ID: 73640)
+  tv          -> Triin Varvas (ID: 44416)
+  mp          -> Margit Päkk (ID: 54665)
+  kp          -> Kadri Pärtel (ID: 255)
+  is          -> Irja Saar (ID: 253)
+
+ 5. MÄRKUS (märkus:)
 --------------------------------------------------------------------------------
   märkus:tekst -> Vabatekstiline märkus või vaatluse detailid
 
- 5. SÜNKROON JA VAATLUSED
+ 6. SÜNKROON JA VAATLUSED
 --------------------------------------------------------------------------------
   seen --sync  -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
 
  NÄITED:
-  seen tumepruun-taelik /tee/foto.jpg sub:kuusk tyyp:lamatüvi ohtrus:üksikud
-  seen "roosa pess" /tee/foto1.jpg /tee/foto2.jpg sub:kuusk tyyp:lamatüvi
+  seen "Ramaria sp." /tee/foto.jpg kv:aa,vl sub:kuusk tyyp:lamatüvi
+  seen "harilik kivipuravik" /tee/foto.jpg kv:aa ohtrus:üksikud
+  seen verev nahkis /tee/foto.jpg kv:aa, vl sub:mänd tyyp:lamapuu
 ================================================================================
 """)
 
