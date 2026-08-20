@@ -190,7 +190,7 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         """, (
             p["sha256"],
             p["file_name"],
-            p["file_path"],
+            p.get("s3_url") or p["file_path"],
             obs_data["id"],
             p.get("plutof_file_id"),
             datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -215,12 +215,14 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         
     conn.close()
 
-    # Värskenda veebidashboardi andmestikku
+    # Värskenda veebidashboardi andmestikku ja juuruta pilve
     try:
         import subprocess
         exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
         if os.path.exists(exp_script):
             subprocess.run([sys.executable, exp_script], capture_output=True)
+            # Taustal Firebase Hosting juurutus (ei blokeeri terminali)
+            subprocess.Popen(["firebase", "deploy", "--only", "hosting"], cwd="/Users/metrobee/Projects/fungib", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
@@ -700,7 +702,7 @@ def move_to_trash(filepath: str) -> bool:
             return False
 
 
-def upload_file_to_plutof(filepath: str, token: str) -> str:
+def upload_file_to_plutof(filepath: str, token: str) -> Tuple[str, str]:
     boundary = uuid.uuid4().hex
     content_type = f"multipart/form-data; boundary={boundary}"
 
@@ -729,14 +731,27 @@ def upload_file_to_plutof(filepath: str, token: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             res = json.loads(resp.read().decode("utf-8"))
-            return str(res["data"]["id"])
+            fid = str(res["data"]["id"])
+            dlinks = res["data"].get("attributes", {}).get("download_links", {})
+            s3_url = dlinks.get("large_link") or dlinks.get("orig_link") or ""
+            return fid, s3_url
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="ignore")
         try:
             err_json = json.loads(err_body)
             for err in err_json.get("errors", []):
                 if "already have a file" in err.get("message", "").lower() and err.get("id"):
-                    return str(err["id"])
+                    fid = str(err["id"])
+                    s3_url = ""
+                    try:
+                        f_req = urllib.request.Request(f"https://api.plutof.ut.ee/v1/public/files/{fid}/", headers={"User-Agent": "PlutoFObservationAssistant/1.0"})
+                        with urllib.request.urlopen(f_req, timeout=10) as f_resp:
+                            f_d = json.loads(f_resp.read().decode("utf-8"))
+                            f_links = f_d.get("data", {}).get("attributes", {}).get("download_links", {})
+                            s3_url = f_links.get("large_link") or f_links.get("orig_link") or ""
+                    except Exception:
+                        pass
+                    return fid, s3_url
         except Exception:
             pass
         raise RuntimeError(f"Faili üleslaadimine ebaõnnestus ({e.code}): {err_body}")
@@ -1025,9 +1040,10 @@ def main():
     uploaded_file_ids = []
     for idx, it in enumerate(items, 1):
         print(f"   [{idx}/{len(items)}] Pilt: {it['file_name']} ...", end="", flush=True)
-        fid = upload_file_to_plutof(it["file_path"], token)
+        fid, s3_url = upload_file_to_plutof(it["file_path"], token)
         uploaded_file_ids.append(fid)
         it["plutof_file_id"] = fid
+        it["s3_url"] = s3_url
         print(f" Valmis (ID: {fid})")
 
     # 5. Vaatluse moodustamine
