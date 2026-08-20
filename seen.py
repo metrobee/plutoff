@@ -144,7 +144,10 @@ CO_OBSERVERS_MAP = {
     "partel": ("Kadri Pärtel", "255"),
     "is": ("Irja Saar", "253"),
     "irja": ("Irja Saar", "253"),
-    "saar": ("Irja Saar", "253")
+    "saar": ("Irja Saar", "253"),
+    "vl": ("Vello Liiv", "19681"),
+    "vello": ("Vello Liiv", "19681"),
+    "liiv": ("Vello Liiv", "19681")
 }
 
 
