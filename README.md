@@ -4,32 +4,73 @@ Professionaalne, minimalistlik ja ülikiire macOS CLI seene- ja taimevaatluste s
 
 ---
 
-## Tööriistad
+## 1. Paigaldamine Homebrew kaudu
 
-1. **`seen` (Mükoloogia):** Seenevaatlused koos puiduliigi, substraadi, ohtruse ja EXIF/GPS metaandmetega.
-2. **`taim` (Botaanika):** Taimevaatlused koos elupaiga (*mets, niit, park, rannik*), fenoloogia (*õitseb, viljub, pungad*) ja EXIF/GPS metaandmetega.
+```bash
+# Lisa Homebrew repositoorium
+brew tap metrobee/homebrew-tap
+
+# Paigalda tööriist
+brew install seen
+# või
+brew install plutoff
+```
 
 ---
 
-## Omadused
+## 2. Seadistamine
+
+Loo fail `~/.plutof_env` oma PlutoF API volitustega:
+```bash
+PLUTOF_CLIENT_ID="sinu_client_id"
+PLUTOF_CLIENT_SECRET="sinu_client_secret"
+PLUTOF_USERNAME="sinu_kasutajanimi"
+PLUTOF_PASSWORD="sinu_parool"
+```
+
+---
+
+## 3. Tööriistad ja Parameetrid
+
+### 1. `seen` (Mükoloogia)
+Toetab nii täispikki kui ka ülilühikesi parameetreid:
+
+| Lühike lipp | Täispikk vaste | Kirjeldus / Näited |
+| :--- | :--- | :--- |
+| **`s:`** | `substraat:` | Puuliik (*kuusk, mänd, kask, haab, lepp, sanglepp, tamm jne*) |
+| **`t:`** | `tüüp:` / `tyyp:` | Substraadi tüüp (*lamatüvi, känd, tüügas, lamaoks, kõdu, muld*) |
+| **`o:`** | `ohtrus:` | Ohtrus (*üksikud, vähe, mõõdukalt, sage, palju, massiliselt*) |
+| **`kv:`** | `kaasv:` / `kaasvaatleja:` | Kaasvaatlejad (*aa, vl, iz, pl, alm, tt, tv, mp, kp, is*) |
+| **`m:`** | `märkus:` | Vabatekstiline märkus või leiu lisainfo |
+
+### 2. ZSH Tab-automaatlõpetus (Tab Completion)
+- Kirjuta `s:` ja vajuta **`<TAB>`** -> avaneb puuliikide loend.
+- Kirjuta `t:` ja vajuta **`<TAB>`** -> avaneb substraadi tüüpide loend.
+- Kirjuta `o:` või `oht:` ja vajuta **`<TAB>`** -> avaneb ohtruse loend.
+- Kirjuta `kv:` ja vajuta **`<TAB>`** -> avaneb kaasvaatlejate loend.
+
+---
+
+## 4. Omadused ja Töökindlus
 
 - **Apple Photos otsetugi:** Fotosid saab kopeerida otse macOS Photos rakendusest ja kleepida terminali. Teegi sisefailid (`*.photoslibrary`) säilitatakse alati 100% puutumatuna.
 - **Natiivne HEIC teisendus:** Teisendab macOS natiivse `sips` utiliidi abil Apple `.HEIC` fotod automaatselt JPEG-formaati, säilitades täieliku EXIF ajatempli ja GPS koordinaadid.
-- **Zsh `noglob` integratsioon:** Väldib metamärkide (`?`, `*`, `[200~`) tõlgendamist failimustrina.
-- **PlutoF Automaatne Taksonituvastus:** Toetab eesti tavanimesid ja ladinakeelseid nimesid.
+- **Tühikutaluv argumentide normaliseerija:** Toetab ka tühikutega eraldatud lippe (nt `o :üksikud`, `s : kuusk`, `t : lamatüvi`).
+- **Automaatne taksonituvastus ja sünonüümide disambiguatsioon:** Toetab eesti tavanimesid, liike ja perekondi (*nt Männitaelik -> Porodaedalea pini, Hiirkäbik -> Baeospora myosura, Käbik -> Baeospora*).
 - **Automaatne pilvesünkroon:** Iga lisatud vaatlus uuendab SQLite andmebaasi ja juurutab reaalajas veebiarhiivi aadressile [https://fungib.web.app](https://fungib.web.app).
 
 ---
 
-## Kasutamine
+## 5. Kasutamise näited
 
 ```bash
-# Taimevaatlus (Harilik jugapuu)
-taim harilik jugapuu [LOHISTA_FOTO_VÕI_KLEEBI]
+# Kiire seenevaatlus lühilippudega
+seen "harilik kuuseriisikas" [FOTO] s:kuusk t:kõdu o:massiliselt
 
-# Lisaparameetritega
-taim "harilik jugapuu" [FOTO] elupaik:park ohtrus:üksikud olek:viljub märkus:"Kärdla keskväljak"
+# Seenevaatlus koos kaasvaatlejate ja märkusega
+seen hiirkäbik [FOTO] kv:aa,vl s:kuusk t:kõdu o:üksikud m:"kuusekäbil"
 
-# Seenevaatlus
-seen "harilik kuuseriisikas" [FOTO] substraat:kuusk tüüp:kõdu ohtrus:massiliselt
+# Taimevaatlus
+taim "harilik jugapuu" [FOTO] elupaik:park ohtrus:üksikud olek:viljub
 ```
+
