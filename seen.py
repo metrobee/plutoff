@@ -383,8 +383,6 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "kimpkõrges": "Connopus acervatus",
         "kimp-kõrges": "Connopus acervatus",
         "kimp kõrges": "Connopus acervatus",
-        "kimp sametkõrges": "Connopus acervatus",
-        "kimp-sametkõrges": "Connopus acervatus",
         "puidu-sametkõrges": "Flammulina velutipes",
         "puidu sametkõrges": "Flammulina velutipes",
         "sametkõrges": "Flammulina velutipes",
