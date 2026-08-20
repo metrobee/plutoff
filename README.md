@@ -1,6 +1,13 @@
-# Seen CLI (PlutoFF)
+# PlutoFF (Seen & Taim CLI)
 
-Professionaalne, minimalistlik ja ülikiire macOS CLI seenevaatluste sisestamiseks otse terminalist PlutoF / eElurikkuse andmebaasi.
+Professionaalne, minimalistlik ja ülikiire macOS CLI seene- ja taimevaatluste sisestamiseks otse terminalist PlutoF / eElurikkuse andmebaasi.
+
+---
+
+## Tööriistad
+
+1. **`seen` (Mükoloogia):** Seenevaatlused koos puiduliigi, substraadi, ohtruse ja EXIF/GPS metaandmetega.
+2. **`taim` (Botaanika):** Taimevaatlused koos elupaiga (*mets, niit, park, rannik*), fenoloogia (*õitseb, viljub, pungad*) ja EXIF/GPS metaandmetega.
 
 ---
 
@@ -9,17 +16,20 @@ Professionaalne, minimalistlik ja ülikiire macOS CLI seenevaatluste sisestamise
 - **Apple Photos otsetugi:** Fotosid saab kopeerida otse macOS Photos rakendusest ja kleepida terminali. Teegi sisefailid (`*.photoslibrary`) säilitatakse alati 100% puutumatuna.
 - **Natiivne HEIC teisendus:** Teisendab macOS natiivse `sips` utiliidi abil Apple `.HEIC` fotod automaatselt JPEG-formaati, säilitades täieliku EXIF ajatempli ja GPS koordinaadid.
 - **Zsh `noglob` integratsioon:** Väldib metamärkide (`?`, `*`, `[200~`) tõlgendamist failimustrina.
-- **Kolmetasemeline deduplikatsioon:** Hoiab ära topeltvaatlused failiräsi (SHA-256), failinime ja EXIF kuupäeva/GPS ristkontrolli abil.
+- **PlutoF Automaatne Taksonituvastus:** Toetab eesti tavanimesid ja ladinakeelseid nimesid.
 - **Automaatne pilvesünkroon:** Iga lisatud vaatlus uuendab SQLite andmebaasi ja juurutab reaalajas veebiarhiivi aadressile [https://fungib.web.app](https://fungib.web.app).
 
 ---
 
-## Paigaldus ja Kasutamine
+## Kasutamine
 
 ```bash
-# Vaatluse lisamine eesti tavanimega ja fotoga
-seen männi-kuldpoorik [LOHISTA_FOTO_VÕI_KLEEBI]
+# Taimevaatlus (Harilik jugapuu)
+taim harilik jugapuu [LOHISTA_FOTO_VÕI_KLEEBI]
 
 # Lisaparameetritega
-seen "kollane tarrik" /tee/pildini.HEIC substraat:kuusk tüüp:lamapuu ohtrus:üksikud märkus:"leitud samblaselt tüvelt"
+taim "harilik jugapuu" [FOTO] elupaik:park ohtrus:üksikud olek:viljub märkus:"Kärdla keskväljak"
+
+# Seenevaatlus
+seen "harilik kuuseriisikas" [FOTO] substraat:kuusk tüüp:kõdu ohtrus:massiliselt
 ```
