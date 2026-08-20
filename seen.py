@@ -681,15 +681,21 @@ def get_country_id(country_name: str, token: str) -> str:
 
 
 def move_to_trash(filepath: str) -> bool:
-    """Liigutab faili turvaliselt macOS Prügikasti (Trash)."""
+    """Liigutab faili turvaliselt macOS Prügikasti (Trash). Kui tegemist on Apple Photos teegiga (.photoslibrary), ei puutu faili kunagi."""
     try:
         abs_path = os.path.abspath(filepath)
+        if ".photoslibrary" in abs_path or "Photos Library" in abs_path:
+            # Apple Photos sisefail - säilitame 100% puutumatuna, et vältida Photos.app veateateid
+            return False
         cmd = f'tell application "Finder" to delete POSIX file "{abs_path}"'
         import subprocess
         subprocess.run(["osascript", "-e", cmd], check=True, capture_output=True)
         return True
     except Exception:
         try:
+            abs_path = os.path.abspath(filepath)
+            if ".photoslibrary" in abs_path or "Photos Library" in abs_path:
+                return False
             trash_dir = os.path.expanduser("~/.Trash")
             dest = os.path.join(trash_dir, os.path.basename(filepath))
             if os.path.exists(dest):
@@ -1198,8 +1204,12 @@ def main():
     if not flags.get("keep"):
         for fp in original_files_to_trash:
             if fp and os.path.exists(fp):
-                if move_to_trash(fp):
-                    print(f"  '{os.path.basename(fp)}' liigutati prügikasti (Downloads kaust on puhas).")
+                abs_fp = os.path.abspath(fp)
+                if ".photoslibrary" in abs_fp or "Photos Library" in abs_fp:
+                    print(f"  Pilt säilitati Apple Photos teegis puutumatuna.")
+                else:
+                    if move_to_trash(fp):
+                        print(f"  '{os.path.basename(fp)}' liigutati prügikasti (Downloads kaust on puhas).")
 
     print("=" * 80)
     print(f" VAATLUS EDUKALT SALVESTATUD PLUTOF / E-ELURIKKUSE ANDMEBAASI!")
