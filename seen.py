@@ -376,7 +376,32 @@ def show_my_observations():
 
 
 def load_local_taxa_mappings() -> Dict[str, str]:
-    mapping = {}
+    import re
+    mapping = {
+        "kimp sametkõrges": "Flammulina velutipes",
+        "kimp-sametkõrges": "Flammulina velutipes",
+        "kimpsametkõrges": "Flammulina velutipes",
+        "sametkõrges": "Flammulina velutipes",
+        "kivipuravik": "Boletus edulis"
+    }
+
+    # 1. ClipSnippet laiendused
+    clipsnip_file = os.path.expanduser("~/.clipsnippet_snippets.json")
+    if os.path.exists(clipsnip_file):
+        try:
+            with open(clipsnip_file, "r", encoding="utf-8") as f:
+                snips = json.load(f)
+                for k, val in snips.get("Seened", {}).items():
+                    m_lat = re.search(r'\((.*?)\)', val)
+                    if m_lat:
+                        lat_n = m_lat.group(1).strip()
+                        est_n = re.sub(r'\(.*?\)', '', val).strip().lower()
+                        if est_n and lat_n:
+                            for variant in [est_n, est_n.replace("-", " "), est_n.replace(" ", "-"), k.lstrip(":").replace("-", " "), k.lstrip(":")]:
+                                mapping[variant.lower()] = lat_n
+        except Exception:
+            pass
+
     if os.path.exists(BORIS_REGISTER_FILE):
         try:
             with open(BORIS_REGISTER_FILE, "r", encoding="utf-8") as f:
@@ -611,7 +636,7 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
     scientific_search = local_taxa.get(norm_query) or local_taxa.get(norm_query.replace("-", " ")) or raw_query
 
     # Kui sisestus sisaldas sulgudes ladinakeelset nime (nt 'Harilik kivipuravik (Boletus edulis)')
-    clean_query = raw_query
+    clean_query = scientific_search if (scientific_search and scientific_search != raw_query) else raw_query
     m_paren = re.search(r'\((.*?)\)', raw_query)
     if m_paren:
         paren_content = m_paren.group(1).strip()
@@ -630,7 +655,7 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         genus_mode = True
         clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', clean_query, flags=re.IGNORECASE).strip()
         clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', scientific_search, flags=re.IGNORECASE).strip()
-    elif " " not in norm_query and norm_query not in ["kivipuravik"]:
+    elif " " not in norm_query and (not scientific_search or scientific_search == raw_query):
         genus_mode = True
 
     clean_norm = clean_query.lower()
@@ -658,10 +683,12 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         "kingdom": "Fungi"
     }
 
-    urls_to_try = [
-        f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(clean_query)}",
-        f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(clean_query)}"
-    ]
+    urls_to_try = []
+    if scientific_search and scientific_search != raw_query:
+        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(scientific_search)}")
+        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(scientific_search)}")
+    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(clean_query)}")
+    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(clean_query)}")
 
     for url in urls_to_try:
         try:
