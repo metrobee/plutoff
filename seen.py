@@ -376,11 +376,17 @@ def show_my_observations():
 
 
 def load_local_taxa_mappings() -> Dict[str, str]:
-    import re
+    import re, unicodedata
     mapping = {
-        "kimp sametkõrges": "Flammulina velutipes",
-        "kimp-sametkõrges": "Flammulina velutipes",
-        "kimpsametkõrges": "Flammulina velutipes",
+        "kimp metskõrges": "Connopus acervatus",
+        "kimp-metskõrges": "Connopus acervatus",
+        "kimpkõrges": "Connopus acervatus",
+        "kimp-kõrges": "Connopus acervatus",
+        "kimp kõrges": "Connopus acervatus",
+        "kimp sametkõrges": "Connopus acervatus",
+        "kimp-sametkõrges": "Connopus acervatus",
+        "puidu-sametkõrges": "Flammulina velutipes",
+        "puidu sametkõrges": "Flammulina velutipes",
         "sametkõrges": "Flammulina velutipes",
         "kivipuravik": "Boletus edulis"
     }
@@ -392,13 +398,15 @@ def load_local_taxa_mappings() -> Dict[str, str]:
             with open(clipsnip_file, "r", encoding="utf-8") as f:
                 snips = json.load(f)
                 for k, val in snips.get("Seened", {}).items():
-                    m_lat = re.search(r'\((.*?)\)', val)
+                    val_norm = unicodedata.normalize("NFC", val)
+                    m_lat = re.search(r'\((.*?)\)', val_norm)
                     if m_lat:
                         lat_n = m_lat.group(1).strip()
-                        est_n = re.sub(r'\(.*?\)', '', val).strip().lower()
+                        est_n = re.sub(r'\(.*?\)', '', val_norm).strip().lower()
                         if est_n and lat_n:
                             for variant in [est_n, est_n.replace("-", " "), est_n.replace(" ", "-"), k.lstrip(":").replace("-", " "), k.lstrip(":")]:
-                                mapping[variant.lower()] = lat_n
+                                variant_norm = unicodedata.normalize("NFC", variant).lower()
+                                mapping[variant_norm] = lat_n
         except Exception:
             pass
 
@@ -628,8 +636,8 @@ def reverse_geocode(lat: float, lon: float) -> Dict[str, str]:
 
 
 def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
-    import re
-    raw_query = taxon_query.strip()
+    import re, unicodedata
+    raw_query = unicodedata.normalize("NFC", taxon_query.strip())
     norm_query = raw_query.lower()
     
     local_taxa = load_local_taxa_mappings()
