@@ -1,0 +1,96 @@
+#compdef seen seen_cli.py /Users/metrobee/GEMINI/scripts/seen_cli.py
+
+_seen() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    local -a sub_opts tyyp_opts ohtrus_opts kv_opts all_flags
+
+    sub_opts=(
+        'kuusk:Harilik kuusk (Picea abies)'
+        'mänd:Harilik mänd (Pinus sylvestris)'
+        'kask:Arukask (Betula pendula)'
+        'haab:Harilik haab (Populus tremula)'
+        'lepp:Hall lepp (Alnus incana)'
+        'sanglepp:Sanglepp / must lepp (Alnus glutinosa)'
+        'tamm:Harilik tamm (Quercus robur)'
+        'saar:Harilik saar (Fraxinus excelsior)'
+        'vaher:Harilik vaher (Acer platanoides)'
+        'sarapuu:Harilik sarapuu (Corylus avellana)'
+        'pärn:Harilik pärn (Tilia cordata)'
+        'sookask:Sookask (Betula pubescens)'
+    )
+
+    tyyp_opts=(
+        'lamatüvi:Mahakukkunud tüvi / lamapuu (Log)'
+        'känd:Puukänd (Stump)'
+        'tüügas:Püstine kuivanud tüvi (Snag)'
+        'lamaoks:Mahakukkunud lamaoks'
+        'elavpuu:Elav kasvav puu'
+        'kõdupuit:Tugevasti kõdunenud puit'
+        'kõdu:Metsakõdu / varis'
+        'okkad:Okkavaris'
+        'lehed:Lehevaris'
+        'muld:Metsamuld / mineraalpinnas'
+    )
+
+    ohtrus_opts=(
+        'üksikud:Üksikud viljakehad (1-3 tk)'
+        'vähe:Vähe (mõned eksemplarid)'
+        'mõõdukalt:Mõõdukalt (tavaline esinemine)'
+        'sage:Sage esinemine'
+        'palju:Palju viljakehi'
+        'massiliselt:Massiline esinemine'
+    )
+
+    kv_opts=(
+        'aa:Allar Antson (51250)'
+        'vl:Vello Liiv (19681)'
+        'iz:Irma Zettur (43966)'
+        'pl:Piret Lõhmus (307)'
+        'alm:Anne-Liia Maido (74936)'
+        'tt:Taavi Tatsi (73640)'
+        'tv:Triin Varvas (44416)'
+        'mp:Margit Päkk (54665)'
+        'kp:Kadri Pärtel (255)'
+        'is:Irja Saar (253)'
+    )
+
+    all_flags=(
+        's\::Substraat (puuliik)'
+        'sub\::Substraat (puuliik)'
+        'substraat\::Substraat (puuliik)'
+        't\::Substraadi tüüp'
+        'tüüp\::Substraadi tüüp'
+        'tyyp\::Substraadi tüüp'
+        'o\::Ohtrus'
+        'oht\::Ohtrus'
+        'ohtrus\::Ohtrus'
+        'kv\::Kaasvaatlejad'
+        'm\::Vabatekstiline märkus'
+        'märkus\::Vabatekstiline märkus'
+    )
+
+    if [[ "$words[CURRENT]" == (o|oht|ohtrus|abund):* ]]; then
+        compset -P '*:'
+        _describe -t ohtrus_opts 'Ohtrus' ohtrus_opts -S ' '
+    elif [[ "$words[CURRENT]" == (s|sub|subst|substraat):* ]]; then
+        compset -P '*:'
+        _describe -t sub_opts 'Substraat (puuliik)' sub_opts -S ' '
+    elif [[ "$words[CURRENT]" == (t|tyyp|tüüp|type):* ]]; then
+        compset -P '*:'
+        _describe -t tyyp_opts 'Substraadi tüüp' tyyp_opts -S ' '
+    elif [[ "$words[CURRENT]" == (kv|kaasv|kaasvaatleja|co):* ]]; then
+        compset -P '*:'
+        _describe -t kv_opts 'Kaasvaatleja' kv_opts -S ' '
+    elif [[ "$words[CURRENT]" == (m|märkus|markus|note):* ]]; then
+        _message 'Vabatekstiline märkus'
+    else
+        _files -g "*.jpg *.jpeg *.png *.heic *.webp *.JPG *.JPEG *.PNG *.HEIC *.WEBP"
+        _describe -t all_flags 'Parameetrid' all_flags -S ''
+    fi
+}
+
+compdef _seen seen
+compdef _seen seen_cli.py
+compdef _seen /Users/metrobee/GEMINI/scripts/seen_cli.py
