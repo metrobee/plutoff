@@ -920,7 +920,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
 
         lower_arg = arg_clean.lower()
         clean_lower = lower_arg.lstrip(":")
-        if any(clean_lower.startswith(prefix) for prefix in ["substraat:", "sub:", "subst:"]):
+        if any(clean_lower.startswith(prefix) for prefix in ["substraat:", "sub:", "subst:", "s:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             mapped = SUBSTRATE_MAP.get(val.lower())
             if mapped:
@@ -929,7 +929,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             else:
                 flags["substraat_nimi"] = val
             expecting_co = False
-        elif any(clean_lower.startswith(prefix) for prefix in ["tüüp:", "tyyp:", "type:"]):
+        elif any(clean_lower.startswith(prefix) for prefix in ["tüüp:", "tyyp:", "type:", "t:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             mapped = TYPE_MAP.get(val.lower())
             if mapped:
@@ -938,7 +938,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             else:
                 flags["tüüp_nimi"] = val
             expecting_co = False
-        elif any(clean_lower.startswith(prefix) for prefix in ["ohtrus:", "oht:", "abund:"]):
+        elif any(clean_lower.startswith(prefix) for prefix in ["ohtrus:", "oht:", "abund:", "o:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             flags["ohtrus"] = ABUNDANCE_MAP.get(val.lower(), val)
             expecting_co = False
@@ -962,7 +962,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             else:
                 flags["kaasvaatlejad"].append({"name": arg_clean.rstrip(","), "id": None})
             expecting_co = arg_clean.endswith(",")
-        elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:"]):
+        elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:", "m:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             flags["märkus"] = val
             expecting_co = False
@@ -980,7 +980,7 @@ def show_options_table():
  PLUTOF SEENEVAATLUSE VALIKUD JA PARAMEETRID
 ================================================================================
 
- 1. SUBSTRAAT (sub: või substraat:)
+ 1. SUBSTRAAT (s:, sub: või substraat:)
 --------------------------------------------------------------------------------
   kuusk       -> Picea abies (L.) H.Karst. (Harilik kuusk)
   mänd        -> Pinus sylvestris L. (Harilik mänd)
@@ -995,7 +995,7 @@ def show_options_table():
   sarapuu     -> Corylus avellana L. (Harilik sarapuu)
   pärn        -> Tilia cordata Mill. (Harilik pärn)
 
- 2. SUBSTRAADI TÜÜP (tyyp: või tüüp:)
+ 2. SUBSTRAADI TÜÜP (t:, tyyp: või tüüp:)
 --------------------------------------------------------------------------------
   lamatüvi    -> Log (Mahakukkunud tüvi / lamapuu) [PlutoF ID: 15]
   känd        -> Stump (Puukänd) [PlutoF ID: 13]
@@ -1008,7 +1008,7 @@ def show_options_table():
   lehed       -> Deciduous leaves (Lehevaris) [PlutoF ID: 20]
   muld        -> Mineral soil (Metsamuld / mineraalpinnas) [PlutoF ID: 9]
 
- 3. OHTRUS (ohtrus: või oht:)
+ 3. OHTRUS (o:, oht: või ohtrus:)
 --------------------------------------------------------------------------------
   üksikud     -> Üksikud viljakehad (1–3 tk)
   vähe        -> Vähe (mõned eksemplarid)
@@ -1017,7 +1017,7 @@ def show_options_table():
   palju       -> Palju (suurem kogumik)
   massiliselt -> Massiliselt (ulatuslik esinemine)
 
-  4. KAASVAATLEJAD (kv: või kaasv:)
+ 4. KAASVAATLEJAD (kv: või kaasv:)
 --------------------------------------------------------------------------------
   aa          -> Allar Antson (ID: 51250)
   vl          -> Vello Liiv (ID: 19681)
@@ -1030,18 +1030,18 @@ def show_options_table():
   kp          -> Kadri Pärtel (ID: 255)
   is          -> Irja Saar (ID: 253)
 
- 5. MÄRKUS (märkus:)
+ 5. MÄRKUS (m: või märkus:)
 --------------------------------------------------------------------------------
-  märkus:tekst -> Vabatekstiline märkus või vaatluse detailid
+  m:tekst      -> Vabatekstiline märkus või vaatluse detailid
 
  6. SÜNKROON JA VAATLUSED
 --------------------------------------------------------------------------------
   seen --sync  -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
 
  NÄITED:
-  seen "Ramaria sp." /tee/foto.jpg kv:aa,vl sub:kuusk tyyp:lamatüvi
-  seen "harilik kivipuravik" /tee/foto.jpg kv:aa ohtrus:üksikud
-  seen verev nahkis /tee/foto.jpg kv:aa, vl sub:mänd tyyp:lamapuu
+  seen "Ramaria sp." /tee/foto.jpg kv:aa,vl s:kuusk t:lamatüvi o:üksikud
+  seen "harilik kivipuravik" /tee/foto.jpg kv:aa o:üksikud s:kuusk
+  seen verev nahkis /tee/foto.jpg kv:aa, vl s:mänd t:lamatüvi m:"ilus leid"
 ================================================================================
 """)
 
