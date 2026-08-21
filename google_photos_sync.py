@@ -200,6 +200,18 @@ def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", f
             lines.append("")
             lines.append(f"Asukoht: {loc_str}")
 
+        lat = obs_data.get("latitude") or obs_data.get("lat")
+        lon = obs_data.get("longitude") or obs_data.get("lon")
+        if lat is not None and lon is not None:
+            try:
+                lat_f = float(lat)
+                lon_f = float(lon)
+                if not loc_str:
+                    lines.append("")
+                lines.append(f"Koordinaadid: {lat_f:.5f}, {lon_f:.5f}")
+            except Exception:
+                pass
+
         dt = obs_data.get("date_time")
         if dt:
             lines.append(f"Aeg: {dt}")
