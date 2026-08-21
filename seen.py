@@ -480,7 +480,14 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "hiir-käbik": "Baeospora myosura",
         "hiirkabik": "Baeospora myosura",
         "käbik": "Baeospora",
-        "kabik": "Baeospora"
+        "kabik": "Baeospora",
+        "bertilloni riisikas": "Lactifluus bertillonii",
+        "bertilloni-riisikas": "Lactifluus bertillonii",
+        "bertilloniriisikas": "Lactifluus bertillonii",
+        "bertilloni piimik": "Lactifluus bertillonii",
+        "bertilloni": "Lactifluus bertillonii",
+        "lactarius bertillonii": "Lactifluus bertillonii",
+        "lactifuus bertillonii": "Lactifluus bertillonii"
     }
     for k, v in overrides.items():
         mapping[k] = v
