@@ -141,6 +141,35 @@ def get_proposed_name(sci_name: str) -> Optional[Dict[str, str]]:
     return None
 
 
+RED_LIST_DB_FILE = "/Users/metrobee/GEMINI/data/eesti_punane_nimestik_seened.json"
+
+def get_conservation_info(sci_name: str, est_name: str = "") -> Optional[Dict[str, Any]]:
+    """Otsib liigi ohustatuse staatust (Eesti Punane Nimestik) ja kaitsekategooriat."""
+    if not os.path.exists(RED_LIST_DB_FILE):
+        return None
+    try:
+        with open(RED_LIST_DB_FILE, "r", encoding="utf-8") as f:
+            db = json.load(f)
+        clean_sci = sci_name.split("(")[0].strip().lower()
+        clean_two = " ".join(clean_sci.split()[:2]) if " " in clean_sci else clean_sci
+        
+        # 1. Täpne teaduslik nimi
+        if clean_sci in db:
+            return db[clean_sci]
+        if clean_two in db:
+            return db[clean_two]
+            
+        # 2. Eesti nime vaste
+        if est_name:
+            clean_est = est_name.lower().strip()
+            for k, v in db.items():
+                if v.get("eestikeelne_nimi", "").lower() == clean_est:
+                    return v
+    except Exception:
+        pass
+    return None
+
+
 def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", fallback_taxon_name: str = "") -> str:
     """Kujundab detailse, mitmekeelse ja emotikonivaba kirjelduse Google Photos jaoks."""
     if isinstance(obs_data, dict):
@@ -189,6 +218,18 @@ def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", f
             lines.append("")
             lines.append("Rahvapärased nimed:")
             lines.extend(names_formatted)
+
+        # Punane nimestik ja kaitsekategooria
+        conserv = get_conservation_info(sci, vern)
+        if conserv:
+            red_status = conserv.get("punane_nimestik")
+            lk_cat = conserv.get("kaitsekategooria")
+            if red_status or lk_cat:
+                lines.append("")
+                if red_status:
+                    lines.append(f"Punane nimestik: {red_status}")
+                if lk_cat:
+                    lines.append(f"Kaitsekategooria: {lk_cat}")
 
         loc_parts = [
             obs_data.get("locality"),
