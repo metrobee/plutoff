@@ -106,6 +106,26 @@ def get_multilingual_taxa_names(taxon_id: Any, taxon_name: str, est_fallback: st
     return names
 
 
+PROPOSED_NAMES_FILE = "/Users/metrobee/GEMINI/data/pakutud_seeninimed.json"
+
+def get_proposed_name(sci_name: str) -> Optional[Dict[str, str]]:
+    if not os.path.exists(PROPOSED_NAMES_FILE):
+        return None
+    try:
+        with open(PROPOSED_NAMES_FILE, "r", encoding="utf-8") as f:
+            proposals = json.load(f)
+        clean_sci = sci_name.split("(")[0].strip().lower()
+        clean_first_two = " ".join(clean_sci.split()[:2]) if " " in clean_sci else clean_sci
+        for p in proposals:
+            p_sci = p.get("teaduslik_nimi", "").split("(")[0].strip().lower()
+            p_first_two = " ".join(p_sci.split()[:2]) if " " in p_sci else p_sci
+            if clean_sci == p_sci or clean_first_two == p_first_two:
+                return p
+    except Exception:
+        pass
+    return None
+
+
 def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", fallback_taxon_name: str = "") -> str:
     """Kujundab detailse, mitmekeelse ja emotikonivaba kirjelduse Google Photos jaoks."""
     if isinstance(obs_data, dict):
@@ -118,6 +138,13 @@ def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", f
         multi_names = get_multilingual_taxa_names(taxon_id, sci, vern)
         if not vern and "eesti" in multi_names:
             vern = multi_names["eesti"]
+
+        # Kontrolli pakutud nime tabelist
+        prop = get_proposed_name(sci)
+        prop_name = prop.get("pakutud_nimi", "").strip().capitalize() if prop else ""
+
+        if not vern and prop_name:
+            vern = f"{prop_name} [pakutud nimi]"
 
         if vern and sci:
             lines.append(f"{vern} ({sci})")
@@ -136,6 +163,9 @@ def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", f
         for l_key in LANG_DISPLAY_ORDER:
             if l_key in multi_names:
                 names_formatted.append(f"{l_key}: {multi_names[l_key]}")
+
+        if prop_name:
+            names_formatted.append(f"eesti (pakutud): {prop_name}")
 
         if names_formatted:
             lines.append("")

@@ -445,18 +445,20 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         except Exception:
             pass
 
-    if os.path.exists(PHOTOS_TAXA_DB):
+    PROPOSED_TAXA_FILE = "/Users/metrobee/GEMINI/data/pakutud_seeninimed.json"
+    if os.path.exists(PROPOSED_TAXA_FILE):
         try:
-            conn = sqlite3.connect(f"file:{PHOTOS_TAXA_DB}?mode=ro", uri=True)
-            c = conn.cursor()
-            c.execute("SELECT estonian_name, latin_name FROM taxa WHERE kingdom = 'Fungi' AND estonian_name IS NOT NULL AND latin_name IS NOT NULL;")
-            for est_n, lat_n in c.fetchall():
-                est = est_n.strip().lower()
-                lat = lat_n.strip()
-                if est and lat:
-                    mapping[est] = lat
-                    mapping[est.replace("-", " ")] = lat
-            conn.close()
+            with open(PROPOSED_TAXA_FILE, "r", encoding="utf-8") as f:
+                p_data = json.load(f)
+                for it in p_data:
+                    est = it.get("pakutud_nimi", "").strip().lower()
+                    lat = it.get("teaduslik_nimi", "").strip()
+                    if est and lat:
+                        mapping[est] = lat
+                        mapping[est.replace("-", " ")] = lat
+                        mapping[est.replace(" ", "-")] = lat
+                        mapping[est.replace(" ", "")] = lat
+                        mapping[est.replace("-", "")] = lat
         except Exception:
             pass
 
