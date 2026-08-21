@@ -90,12 +90,12 @@ def main():
         print("Viga: Google Photos autentimine ebaõnnestus!", file=sys.stderr)
         return
 
-    album_id = google_photos_sync.get_or_create_album(creds, album_name="PlutoF Vaatlused")
+    album_id = google_photos_sync.get_or_create_album(creds, album_name="PlutoF Seenevaatlused")
     if not album_id:
         print("Viga: Albumit ei leitud ega saanud luua!", file=sys.stderr)
         return
 
-    print(f"Sihtalbum: 'PlutoF Vaatlused' (ID: {album_id})")
+    print(f"Sihtalbum: 'PlutoF Seenevaatlused' (ID: {album_id})")
 
     synced = load_synced()
     print(f"Varasemalt sünkroonitud fotode räsisi/kirjeid: {len(synced)}")

@@ -327,6 +327,7 @@ def get_authenticated_service():
     return creds
 
 
+ALBUM_NAME = "PlutoF Seenevaatlused"
 ALBUM_ID_FILE = os.path.expanduser("~/.google_photos_album_id.txt")
 ALBUMS_CACHE_FILE = os.path.expanduser("~/.google_photos_albums_cache.json")
 
