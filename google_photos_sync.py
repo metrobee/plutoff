@@ -161,6 +161,9 @@ def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", f
         if not vern and prop_name:
             vern = f"{prop_name} [pakutud nimi]"
 
+        if vern:
+            vern = vern[0].upper() + vern[1:] if len(vern) > 1 else vern.upper()
+
         if vern and sci:
             lines.append(f"{vern} ({sci})")
         elif vern:
