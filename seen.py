@@ -1450,12 +1450,12 @@ def main():
     
     record_observation_locally(obs_record, items)
 
-    # 7. Google Photos albumisse lisamine (' PlutoF Vaatlused')
+    # 7. Google Photos albumisse lisamine ('PlutoF Vaatlused')
     if os.path.exists(os.path.expanduser("~/.google_photos_token.json")):
         try:
             sys.path.insert(0, "/Users/metrobee/GEMINI/scripts")
             from google_photos_sync import sync_observation_to_google_photos
-            sync_observation_to_google_photos(resolved_photo_paths, obs_id, taxon_info["full_name"])
+            sync_observation_to_google_photos(resolved_photo_paths, obs_record)
         except Exception as e:
             pass
 

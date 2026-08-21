@@ -13,12 +13,74 @@ from typing import Optional, Dict, Any, List
 
 TOKEN_FILE = os.path.expanduser("~/.google_photos_token.json")
 CLIENT_SECRET_FILE = "/Users/metrobee/Projects/realtime-veebis/client_secret_903136773415-32vkc2o5482in9r5nabq4gd1c6podceg.apps.googleusercontent.com.json"
-ALBUM_NAME = " PlutoF Vaatlused"
+ALBUM_NAME = "PlutoF Vaatlused"
 SCOPES = [
     "https://www.googleapis.com/auth/photoslibrary.appendonly",
     "https://www.googleapis.com/auth/photoslibrary.sharing",
     "https://www.googleapis.com/auth/photoslibrary.edit.appcreateddata"
 ]
+
+
+def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", fallback_taxon_name: str = "") -> str:
+    """Kujundab detailse, professionaalse ja emotikonivaba kirjelduse Google Photos jaoks."""
+    if isinstance(obs_data, dict):
+        lines = []
+        vern = (obs_data.get("vernacular_name") or "").strip()
+        sci = (obs_data.get("taxon_name") or fallback_taxon_name).strip()
+        
+        if vern and sci:
+            lines.append(f"{vern} ({sci})")
+        elif vern:
+            lines.append(vern)
+        elif sci:
+            lines.append(sci)
+
+        obs_id = obs_data.get("id") or obs_data.get("obs_id") or fallback_obs_id
+        if obs_id:
+            lines.append(f"PlutoF ID: {obs_id}")
+            lines.append(f"https://app.plutof.ut.ee/observation/view/{obs_id}")
+
+        loc_parts = [
+            obs_data.get("locality"),
+            obs_data.get("commune") or obs_data.get("municipality"),
+            obs_data.get("county")
+        ]
+        loc_str = ", ".join([str(p).strip() for p in loc_parts if p and str(p).strip()])
+        if loc_str:
+            lines.append(f"Asukoht: {loc_str}")
+
+        dt = obs_data.get("date_time")
+        if dt:
+            lines.append(f"Aeg: {dt}")
+
+        sub = obs_data.get("substrate")
+        stype = obs_data.get("substrate_type")
+        if sub and stype:
+            lines.append(f"Substraat: {sub} ({stype})")
+        elif sub:
+            lines.append(f"Substraat: {sub}")
+        elif stype:
+            lines.append(f"Substraadi tüüp: {stype}")
+
+        abund = obs_data.get("abundance")
+        if abund:
+            lines.append(f"Ohtrus: {abund}")
+
+        collectors = obs_data.get("collectors")
+        if collectors and collectors != "Boris Meldre":
+            lines.append(f"Kogujad: {collectors}")
+
+        remarks = obs_data.get("remarks")
+        if remarks:
+            lines.append(f"Märkus: {remarks}")
+
+        return "\n".join(lines)
+    else:
+        # Fallback lihtsa stringi korral
+        obs_id = fallback_obs_id or str(obs_data)
+        if fallback_taxon_name:
+            return f"PlutoF ID: {obs_id} | {fallback_taxon_name}\nhttps://app.plutof.ut.ee/observation/view/{obs_id}"
+        return f"PlutoF ID: {obs_id}\nhttps://app.plutof.ut.ee/observation/view/{obs_id}"
 
 
 def get_authenticated_service():
@@ -42,7 +104,7 @@ def get_authenticated_service():
 
         if not creds:
             if not os.path.exists(CLIENT_SECRET_FILE):
-                print(f" Viga: Google OAuth faili ei leitud ({CLIENT_SECRET_FILE})", file=sys.stderr)
+                print(f"Viga: Google OAuth faili ei leitud ({CLIENT_SECRET_FILE})", file=sys.stderr)
                 return None
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
             creds = flow.run_local_server(port=8080)
@@ -56,7 +118,7 @@ def get_authenticated_service():
 ALBUM_ID_FILE = os.path.expanduser("~/.google_photos_album_id.txt")
 
 def get_or_create_album(creds) -> Optional[str]:
-    """Tagastab albumi ' PlutoF Vaatlused' ID või loob selle."""
+    """Tagastab albumi 'PlutoF Vaatlused' ID või loob selle."""
     if os.path.exists(ALBUM_ID_FILE):
         try:
             with open(ALBUM_ID_FILE, "r") as f:
@@ -84,12 +146,12 @@ def get_or_create_album(creds) -> Optional[str]:
                     f.write(album_id)
                 return album_id
     except Exception as e:
-        print(f"  Uue albumi loomine ebaõnnestus: {e}", file=sys.stderr)
+        print(f"Uue albumi loomine ebaõnnestus: {e}", file=sys.stderr)
         return None
 
 
-def sync_observation_to_google_photos(photo_paths: List[str], obs_id: str, taxon_name: str) -> bool:
-    """Lisab vaatluse fotod Google Photos albumisse ' PlutoF Vaatlused'."""
+def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, taxon_name: str = "") -> bool:
+    """Lisab vaatluse fotod Google Photos albumisse 'PlutoF Vaatlused' täielike metaandmetega."""
     try:
         creds = get_authenticated_service()
         if not creds:
@@ -109,6 +171,12 @@ def sync_observation_to_google_photos(photo_paths: List[str], obs_id: str, taxon
             "Authorization": f"Bearer {creds.token}",
             "Content-Type": "application/json"
         }
+
+        # Kujunda täielik kirjeldus
+        if isinstance(obs_info, dict):
+            description_text = format_google_photos_description(obs_info)
+        else:
+            description_text = format_google_photos_description(str(obs_info), fallback_obs_id=str(obs_info), fallback_taxon_name=taxon_name)
 
         import time
 
@@ -143,12 +211,12 @@ def sync_observation_to_google_photos(photo_paths: List[str], obs_id: str, taxon
             if not upload_token:
                 continue
 
-            # Lisa albumisse kirjeldusega
+            # Lisa albumisse täieliku kirjeldusega
             create_payload = json.dumps({
                 "albumId": album_id,
                 "newMediaItems": [
                     {
-                        "description": f" PlutoF ID: {obs_id} | {taxon_name}",
+                        "description": description_text,
                         "simpleMediaItem": {
                             "fileName": fname,
                             "uploadToken": upload_token
@@ -172,10 +240,10 @@ def sync_observation_to_google_photos(photo_paths: List[str], obs_id: str, taxon
                     else:
                         raise e
 
-        print(f" Sünkroonitud Google Photos albumisse: '{ALBUM_NAME}'")
+        print(f"Sünkroonitud Google Photos albumisse: '{ALBUM_NAME}'")
         return True
     except Exception as e:
-        print(f"  Google Photos sünkroonimise märkus: {e}", file=sys.stderr)
+        print(f"Google Photos sünkroonimise märkus: {e}", file=sys.stderr)
         return False
 
 
