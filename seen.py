@@ -487,7 +487,11 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "bertilloni piimik": "Lactifluus bertillonii",
         "bertilloni": "Lactifluus bertillonii",
         "lactarius bertillonii": "Lactifluus bertillonii",
-        "lactifuus bertillonii": "Lactifluus bertillonii"
+        "lactifuus bertillonii": "Lactifluus bertillonii",
+        "kreemriisikas": "Lactarius pubescens",
+        "kreem-riisikas": "Lactarius pubescens",
+        "kreem riisikas": "Lactarius pubescens",
+        "kreemriisikad": "Lactarius pubescens"
     }
     for k, v in overrides.items():
         mapping[k] = v
