@@ -57,8 +57,23 @@ def get_multilingual_taxa_names(taxon_id: Any, taxon_name: str, est_fallback: st
         return res
 
     names = {}
-    if est_fallback:
-        names["eesti"] = est_fallback.capitalize()
+    # 0. Kui taxon_id puudub või eesti nimi puudub, lahendame PlutoF autocomplete kaudu
+    if not taxon_id:
+        try:
+            url_ac = "https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name=" + urllib.parse.quote(clean_sci)
+            req_ac = urllib.request.Request(url_ac, headers={"User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)"})
+            with urllib.request.urlopen(req_ac, timeout=4) as resp:
+                data_ac = json.loads(resp.read().decode("utf-8"))
+                for it in data_ac.get("data", []):
+                    at = it.get("attributes", {})
+                    if not at.get("is_synonym"):
+                        taxon_id = str(it.get("id"))
+                        v_est = at.get("vernacular_name")
+                        if v_est and "eesti" not in names:
+                            names["eesti"] = v_est.strip().capitalize()
+                        break
+        except Exception:
+            pass
 
     # 1. PlutoF taksoni detailpäring
     if taxon_id:
