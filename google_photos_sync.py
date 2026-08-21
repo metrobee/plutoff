@@ -53,6 +53,14 @@ def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", f
         if dt:
             lines.append(f"Aeg: {dt}")
 
+        elupaik = obs_data.get("habitat") or obs_data.get("elupaik")
+        if elupaik:
+            lines.append(f"Elupaik: {elupaik}")
+
+        olek = obs_data.get("phenology") or obs_data.get("olek")
+        if olek:
+            lines.append(f"Olek: {olek}")
+
         sub = obs_data.get("substrate")
         stype = obs_data.get("substrate_type")
         if sub and stype:
@@ -115,15 +123,29 @@ def get_authenticated_service():
     return creds
 
 
-ALBUM_ID_FILE = os.path.expanduser("~/.google_photos_album_id.txt")
+ALBUMS_CACHE_FILE = os.path.expanduser("~/.google_photos_albums_cache.json")
 
-def get_or_create_album(creds) -> Optional[str]:
-    """Tagastab albumi 'PlutoF Vaatlused' ID või loob selle."""
-    if os.path.exists(ALBUM_ID_FILE):
+def get_or_create_album(creds, album_name: str = ALBUM_NAME) -> Optional[str]:
+    """Tagastab albumi ID või loob selle."""
+    cache = {}
+    if os.path.exists(ALBUMS_CACHE_FILE):
+        try:
+            with open(ALBUMS_CACHE_FILE, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+                if album_name in cache:
+                    return cache[album_name]
+        except Exception:
+            pass
+
+    # Legacy album_id fallback seente jaoks
+    if album_name == ALBUM_NAME and os.path.exists(ALBUM_ID_FILE):
         try:
             with open(ALBUM_ID_FILE, "r") as f:
                 aid = f.read().strip()
                 if aid:
+                    cache[album_name] = aid
+                    with open(ALBUMS_CACHE_FILE, "w", encoding="utf-8") as f_out:
+                        json.dump(cache, f_out, indent=2)
                     return aid
         except Exception:
             pass
@@ -133,31 +155,32 @@ def get_or_create_album(creds) -> Optional[str]:
         "Content-Type": "application/json"
     }
 
-    # 1. Loo uus album
+    # Loo uus album
     url_create = "https://photoslibrary.googleapis.com/v1/albums"
-    payload = json.dumps({"album": {"title": ALBUM_NAME}}).encode("utf-8")
+    payload = json.dumps({"album": {"title": album_name}}).encode("utf-8")
     try:
         req = urllib.request.Request(url_create, data=payload, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             album_id = data.get("id")
             if album_id:
-                with open(ALBUM_ID_FILE, "w") as f:
-                    f.write(album_id)
+                cache[album_name] = album_id
+                with open(ALBUMS_CACHE_FILE, "w", encoding="utf-8") as f_out:
+                    json.dump(cache, f_out, indent=2)
                 return album_id
     except Exception as e:
-        print(f"Uue albumi loomine ebaõnnestus: {e}", file=sys.stderr)
+        print(f"Uue albumi '{album_name}' loomine ebaõnnestus: {e}", file=sys.stderr)
         return None
 
 
-def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, taxon_name: str = "") -> bool:
-    """Lisab vaatluse fotod Google Photos albumisse 'PlutoF Vaatlused' täielike metaandmetega."""
+def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, taxon_name: str = "", album_name: str = ALBUM_NAME) -> bool:
+    """Lisab vaatluse fotod määratud Google Photos albumisse täielike metaandmetega."""
     try:
         creds = get_authenticated_service()
         if not creds:
             return False
 
-        album_id = get_or_create_album(creds)
+        album_id = get_or_create_album(creds, album_name=album_name)
         if not album_id:
             return False
 

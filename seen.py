@@ -255,6 +255,24 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         
     conn.close()
 
+    # Reaalajas varukoopia Google Drive'i
+    try:
+        import shutil
+        gdrive_candidates = [
+            os.path.expanduser("~/Library/CloudStorage/GoogleDrive-borismeldre@gmail.com/Minu ketas"),
+            os.path.expanduser("~/Library/CloudStorage/GoogleDrive-borismeldre@gmail.com/My Drive")
+        ]
+        gdrive_base = next((p for p in gdrive_candidates if os.path.exists(p)), None)
+        if gdrive_base:
+            backup_dir = os.path.join(gdrive_base, "PlutoF_Backup")
+            os.makedirs(backup_dir, exist_ok=True)
+            if os.path.exists(LOCAL_OBS_DB):
+                shutil.copy2(LOCAL_OBS_DB, os.path.join(backup_dir, "plutof_vaatlused.db"))
+            if os.path.exists(LOCAL_OBS_JSON):
+                shutil.copy2(LOCAL_OBS_JSON, os.path.join(backup_dir, "plutof_vaatlused.json"))
+    except Exception:
+        pass
+
     # Värskenda veebidashboardi andmestikku ja juuruta pilve
     try:
         import subprocess
