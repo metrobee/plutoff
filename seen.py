@@ -491,7 +491,11 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "kreemriisikas": "Lactarius pubescens",
         "kreem-riisikas": "Lactarius pubescens",
         "kreem riisikas": "Lactarius pubescens",
-        "kreemriisikad": "Lactarius pubescens"
+        "kreemriisikad": "Lactarius pubescens",
+        "triibuline heinik": "Tricholoma portentosum",
+        "triibuline-heinik": "Tricholoma portentosum",
+        "triibulineheinik": "Tricholoma portentosum",
+        "tricholoma portentosum": "Tricholoma portentosum"
     }
     for k, v in overrides.items():
         mapping[k] = v
