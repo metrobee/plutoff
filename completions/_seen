@@ -52,8 +52,17 @@ _seen() {
         'tt:Taavi Tatsi (73640)'
         'tv:Triin Varvas (44416)'
         'mp:Margit Päkk (54665)'
-        'kp:Kadri Pärtel (255)'
+    det_opts=(
+        'vl:Vello Liiv (19681)'
         'is:Irja Saar (253)'
+        'kp:Kadri Pärtel (255)'
+        'aa:Allar Antson (51250)'
+        'iz:Irma Zettur (43966)'
+        'pl:Piret Lõhmus (307)'
+        'alm:Anne-Liia Maido (74936)'
+        'tt:Taavi Tatsi (73640)'
+        'tv:Triin Varvas (44416)'
+        'mp:Margit Päkk (54665)'
     )
 
     all_flags=(
@@ -67,6 +76,10 @@ _seen() {
         'oht\::Ohtrus'
         'ohtrus\::Ohtrus'
         'kv\::Kaasvaatlejad'
+        'mä\::Määraja (determiner)'
+        'ma\::Määraja (determiner)'
+        'määraja\::Määraja (determiner)'
+        'det\::Määraja (determiner)'
         'm\::Vabatekstiline märkus'
         'märkus\::Vabatekstiline märkus'
     )
@@ -83,6 +96,9 @@ _seen() {
     elif [[ "$words[CURRENT]" == (kv|kaasv|kaasvaatleja|co):* ]]; then
         compset -P '*:'
         _describe -t kv_opts 'Kaasvaatleja' kv_opts -S ' '
+    elif [[ "$words[CURRENT]" == (mä|ma|määraja|maaraja|det):* ]]; then
+        compset -P '*:'
+        _describe -t det_opts 'Määraja' det_opts -S ' '
     elif [[ "$words[CURRENT]" == (m|märkus|markus|note):* ]]; then
         _message 'Vabatekstiline märkus'
     else

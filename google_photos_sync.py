@@ -282,6 +282,10 @@ def format_google_photos_description(obs_data: Any, fallback_obs_id: str = "", f
         if collectors and collectors != "Boris Meldre":
             lines.append(f"Kogujad: {collectors}")
 
+        determiner = obs_data.get("determiner") or obs_data.get("määraja")
+        if determiner and determiner != "Boris Meldre":
+            lines.append(f"Määraja: {determiner}")
+
         remarks = obs_data.get("remarks")
         if remarks:
             lines.append(f"Märkus: {remarks}")

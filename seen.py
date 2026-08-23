@@ -191,6 +191,10 @@ def init_local_db():
         conn.execute("ALTER TABLE observation_photos ADD COLUMN google_photos_media_id TEXT;")
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE observations ADD COLUMN determiner TEXT;")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -202,8 +206,8 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
     
     c.execute("""
     INSERT OR REPLACE INTO observations 
-    (id, taxon_name, taxon_id, vernacular_name, date_time, latitude, longitude, altitude, locality, county, commune, substrate, substrate_type, abundance, remarks, url, created_at, collectors, primary_observer, is_co_observer)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    (id, taxon_name, taxon_id, vernacular_name, date_time, latitude, longitude, altitude, locality, county, commune, substrate, substrate_type, abundance, remarks, url, created_at, collectors, primary_observer, is_co_observer, determiner)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, (
         obs_data["id"],
         obs_data.get("taxon_name"),
@@ -224,7 +228,8 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         datetime.datetime.now(datetime.timezone.utc).isoformat(),
         obs_data.get("collectors", "Boris Meldre"),
         "Boris Meldre",
-        0
+        0,
+        obs_data.get("determiner", "Boris Meldre")
     ))
 
     for p in photos_data:
@@ -858,6 +863,26 @@ def get_country_id(country_name: str, token: str) -> str:
     return "47"
 
 
+def fetch_person_id(name: str, token: str) -> Optional[str]:
+    """Otsib PlutoF API-st isiku nime järgi Person ID."""
+    if not name or not token:
+        return None
+    url = f"https://api.plutof.ut.ee/v1/public/persons/autocomplete/?name={urllib.parse.quote(name)}"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
+        "Authorization": f"Bearer {token}"
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            items = data.get("data", [])
+            if items:
+                return str(items[0].get("id"))
+    except Exception:
+        pass
+    return None
+
+
 def move_to_trash(filepath: str) -> bool:
     """Liigutab faili turvaliselt macOS Prügikasti (Trash). Kui tegemist on Apple Photos teegiga (.photoslibrary), ei puutu faili kunagi."""
     try:
@@ -955,6 +980,7 @@ def normalize_cli_args(args_list: List[str]) -> List[str]:
         "tüüp", "tyyp", "type", "t",
         "ohtrus", "oht", "abund", "o",
         "kaasvaatleja", "kaasvaatlejad", "kaaslane", "kaaslased", "kaasv", "kaas", "co", "kv",
+        "määraja", "maaraja", "määras", "maaras", "mä", "ma", "det",
         "märkus", "markus", "märkused", "note", "notes", "m"
     }
     
@@ -1015,6 +1041,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
         "ohtrus": "",
         "märkus": "",
         "kaasvaatlejad": [],
+        "määraja": None,
         "force": False
     }
     taxon_words = []
@@ -1086,6 +1113,15 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             else:
                 flags["kaasvaatlejad"].append({"name": arg_clean.rstrip(","), "id": None})
             expecting_co = arg_clean.endswith(",")
+        elif any(clean_lower.startswith(prefix) for prefix in ["määraja:", "maaraja:", "määras:", "maaras:", "mä:", "ma:", "det:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
+            v_lower = val.lower()
+            if v_lower in CO_OBSERVERS_MAP:
+                det_name, det_id = CO_OBSERVERS_MAP[v_lower]
+                flags["määraja"] = {"name": det_name, "id": det_id}
+            else:
+                flags["määraja"] = {"name": val, "id": None}
+            expecting_co = False
         elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:", "m:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             flags["märkus"] = val
@@ -1100,12 +1136,12 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
 
 def show_options_table():
     print("""
-================================================================================
+===============================================================================
  PLUTOF SEENEVAATLUSE VALIKUD JA PARAMEETRID
-================================================================================
+===============================================================================
 
  1. SUBSTRAAT (s:, sub: või substraat:)
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   kuusk       -> Picea abies (L.) H.Karst. (Harilik kuusk)
   mänd        -> Pinus sylvestris L. (Harilik mänd)
   kask        -> Betula pendula Roth (Arukask)
@@ -1120,7 +1156,7 @@ def show_options_table():
   pärn        -> Tilia cordata Mill. (Harilik pärn)
 
  2. SUBSTRAADI TÜÜP (t:, tyyp: või tüüp:)
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   lamatüvi    -> Log (Mahakukkunud tüvi / lamapuu) [PlutoF ID: 15]
   känd        -> Stump (Puukänd) [PlutoF ID: 13]
   tüügas      -> Snag (Püstine kuivanud tüvi) [PlutoF ID: 14]
@@ -1133,7 +1169,7 @@ def show_options_table():
   muld        -> Mineral soil (Metsamuld / mineraalpinnas) [PlutoF ID: 9]
 
  3. OHTRUS (o:, oht: või ohtrus:)
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   üksikud     -> Üksikud viljakehad (1–3 tk)
   vähe        -> Vähe (mõned eksemplarid)
   mõõdukalt   -> Mõõdukalt (tavaline leiukoht)
@@ -1142,7 +1178,7 @@ def show_options_table():
   massiliselt -> Massiliselt (ulatuslik esinemine)
 
  4. KAASVAATLEJAD (kv: või kaasv:)
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   aa          -> Allar Antson (ID: 51250)
   vl          -> Vello Liiv (ID: 19681)
   iz          -> Irma Zettur (ID: 43966)
@@ -1154,19 +1190,34 @@ def show_options_table():
   kp          -> Kadri Pärtel (ID: 255)
   is          -> Irja Saar (ID: 253)
 
- 5. MÄRKUS (m: või märkus:)
---------------------------------------------------------------------------------
+ 5. MÄÄRAJA (mä:, määraja:, ma: või det:)
+-------------------------------------------------------------------------------
+  vl          -> Vello Liiv (ID: 19681)
+  is          -> Irja Saar (ID: 253)
+  kp          -> Kadri Pärtel (ID: 255)
+  aa          -> Allar Antson (ID: 51250)
+  iz          -> Irma Zettur (ID: 43966)
+  pl          -> Piret Lõhmus (ID: 307)
+  alm / am    -> Anne-Liia Maido (ID: 74936)
+  tt          -> Taavi Tatsi (ID: 73640)
+  tv          -> Triin Varvas (ID: 44416)
+  mp          -> Margit Päkk (ID: 54665)
+  "Eesnimi Perekonnanimi" -> Otsitakse automaatselt PlutoF registrist
+
+ 6. MÄRKUS (m: või märkus:)
+-------------------------------------------------------------------------------
   m:tekst      -> Vabatekstiline märkus või vaatluse detailid
 
- 6. SÜNKROON JA VAATLUSED
---------------------------------------------------------------------------------
-  seen --sync  -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
+ 7. SÜNKROON JA PARANDUSED
+-------------------------------------------------------------------------------
+  seen sync <ID> -> Sünkroonib vaatluse PlutoF-ist andmebaasi ja Google Photosesse
+  seen --sync    -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
 
  NÄITED:
-  seen "Ramaria sp." /tee/foto.jpg kv:aa,vl s:kuusk t:lamatüvi o:üksikud
-  seen "harilik kivipuravik" /tee/foto.jpg kv:aa o:üksikud s:kuusk
-  seen verev nahkis /tee/foto.jpg kv:aa, vl s:mänd t:lamatüvi m:"ilus leid"
-================================================================================
+  seen "Hygrophorus persicolor" /tee/foto.jpg mä:vl s:mänd o:üksikud
+  seen "Ramaria sp." /tee/foto.jpg kv:aa,vl mä:is s:kuusk t:lamatüvi
+  seen verev nahkis /tee/foto.jpg mä:vl s:mänd t:lamatüvi m:"ilus leid"
+===============================================================================
 """)
 
 
@@ -1464,6 +1515,9 @@ def main():
     if flags["kaasvaatlejad"]:
         co_display = ", ".join([f"{c['name']} (ID: {c['id']})" if c.get('id') else c['name'] for c in flags["kaasvaatlejad"]])
         print(f" Kaasvaatlejad: {co_display}")
+    if flags.get("määraja") and flags["määraja"].get("name"):
+        det_display = f"{flags['määraja']['name']} (ID: {flags['määraja']['id']})" if flags['määraja'].get('id') else flags['määraja']['name']
+        print(f" Määraja: {det_display}")
     if flags["märkus"]:
         print(f" Märkus: {flags['märkus']}")
     print(f" Fotosid kokku: {len(resolved_photo_paths)}")
@@ -1602,6 +1656,33 @@ def main():
             "data": [{"type": "File", "id": fid} for fid in uploaded_file_ids]
         }
     }
+
+    # Määraja (identified_by)
+    determiner_obj = flags.get("määraja")
+    determiner_name = "Boris Meldre"
+    if determiner_obj and determiner_obj.get("id"):
+        determiner_name = determiner_obj["name"]
+        obs_rels["identified_by"] = {
+            "data": [{"type": "Person", "id": str(determiner_obj["id"])}]
+        }
+    elif determiner_obj and determiner_obj.get("name"):
+        determiner_name = determiner_obj["name"]
+        det_id = fetch_person_id(determiner_obj["name"], token)
+        if det_id:
+            determiner_obj["id"] = det_id
+            obs_rels["identified_by"] = {
+                "data": [{"type": "Person", "id": str(det_id)}]
+            }
+        else:
+            obs_attrs["identification_remarks"] = f"Määraja: {determiner_obj['name']}"
+            obs_rels["identified_by"] = {
+                "data": [{"type": "Person", "id": str(person_id)}]
+            }
+    else:
+        obs_rels["identified_by"] = {
+            "data": [{"type": "Person", "id": str(person_id)}]
+        }
+
     if flags.get("substraat_taxon_id"):
         obs_rels["substrate_taxon"] = {
             "data": {"type": "Taxon", "id": str(flags["substraat_taxon_id"])}
@@ -1661,6 +1742,7 @@ def main():
         "abundance": flags["ohtrus"],
         "remarks": full_remarks,
         "collectors": collectors_str,
+        "determiner": determiner_name,
         "url": f"https://app.plutof.ut.ee/observation/view/{obs_id}"
     }
     
