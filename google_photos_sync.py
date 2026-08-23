@@ -379,6 +379,35 @@ def get_or_create_album(creds, album_name: str = ALBUM_NAME) -> Optional[str]:
         return None
 
 
+def embed_gps_to_jpeg_bytes(img_bytes: bytes, lat: float, lon: float) -> bytes:
+    if lat is None or lon is None:
+        return img_bytes
+    try:
+        from PIL import Image, ExifTags
+        import io
+        im = Image.open(io.BytesIO(img_bytes))
+        exif = im.getexif()
+        gps_ifd = exif.get_ifd(ExifTags.IFD.GPSInfo)
+
+        def to_deg(val):
+            d = int(abs(val))
+            m = int((abs(val) - d) * 60)
+            s = round(((abs(val) - d) * 60 - m) * 60, 4)
+            return (float(d), float(m), float(s))
+
+        gps_ifd[1] = "N" if lat >= 0 else "S"
+        gps_ifd[2] = to_deg(lat)
+        gps_ifd[3] = "E" if lon >= 0 else "W"
+        gps_ifd[4] = to_deg(lon)
+
+        exif[ExifTags.IFD.GPSInfo] = gps_ifd
+        out = io.BytesIO()
+        im.save(out, format="JPEG", exif=exif, quality=95)
+        return out.getvalue()
+    except Exception:
+        return img_bytes
+
+
 def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, taxon_name: str = "", album_name: str = ALBUM_NAME) -> bool:
     """Lisab vaatluse fotod määratud Google Photos albumisse täielike metaandmetega."""
     try:
@@ -410,15 +439,28 @@ def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, tax
         import time
 
         for fp in photo_paths:
-            if not os.path.exists(fp):
+            if fp.startswith("http://") or fp.startswith("https://"):
+                try:
+                    req_img = urllib.request.Request(fp, headers={"User-Agent": "PlutoFObservationAssistant/1.0"})
+                    with urllib.request.urlopen(req_img, timeout=25) as resp:
+                        img_bytes = resp.read()
+                    fname = os.path.basename(fp)
+                except Exception:
+                    continue
+            elif os.path.exists(fp):
+                fname = os.path.basename(fp)
+                with open(fp, "rb") as f:
+                    img_bytes = f.read()
+            else:
                 continue
 
-            fname = os.path.basename(fp)
+            lat = obs_info.get("latitude") or obs_info.get("lat") if isinstance(obs_info, dict) else None
+            lon = obs_info.get("longitude") or obs_info.get("lon") if isinstance(obs_info, dict) else None
+            if lat is not None and lon is not None:
+                img_bytes = embed_gps_to_jpeg_bytes(img_bytes, float(lat), float(lon))
+
             upload_headers = dict(headers_upload)
             upload_headers["X-Goog-Upload-File-Name"] = fname
-
-            with open(fp, "rb") as f:
-                img_bytes = f.read()
 
             upload_token = None
             for attempt in range(3):

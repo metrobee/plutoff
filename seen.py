@@ -1165,14 +1165,178 @@ def show_options_table():
 """)
 
 
+def sync_single_observation(obs_id: str):
+    """Sünkroonib konkreetse vaatluse PlutoF API-st SQLite andmebaasi ja Google Photosesse."""
+    print("=" * 80)
+    print(f"PLUTOF VAATLUSE {obs_id} SÜNKROONIMINE")
+    print("=" * 80)
+
+    creds_file = os.path.expanduser("~/.plutof_credentials.json")
+    token = None
+    if os.path.exists(creds_file):
+        try:
+            with open(creds_file, "r") as f:
+                token = json.load(f).get("access_token")
+        except Exception:
+            pass
+
+    url = f"https://api.plutof.ut.ee/v1/public/observations/{obs_id}/"
+    headers = {"User-Agent": "PlutoFObservationAssistant/1.0"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"Viga PlutoF API päringul: {e}", file=sys.stderr)
+        return
+
+    attr = data.get("data", {}).get("attributes", {})
+    rels = data.get("data", {}).get("relationships", {})
+
+    taxon_node = rels.get("taxon_node", {}).get("data") or {}
+    taxon_id = taxon_node.get("id")
+    taxon_name = attr.get("representation") or ""
+    remarks = attr.get("remarks") or ""
+
+    vernacular_name = ""
+    if taxon_id:
+        try:
+            t_url = f"https://api.plutof.ut.ee/v1/public/taxa/{taxon_id}/"
+            t_req = urllib.request.Request(t_url, headers={"User-Agent": "PlutoFObservationAssistant/1.0"})
+            with urllib.request.urlopen(t_req, timeout=5) as t_resp:
+                t_data = json.loads(t_resp.read().decode("utf-8"))
+                v_list = t_data.get("data", {}).get("attributes", {}).get("vernacular_names", [])
+                for v in v_list:
+                    if v.get("language") in ["est", "et"]:
+                        vernacular_name = v.get("name")
+                        break
+        except Exception:
+            pass
+
+    init_local_db()
+    conn = sqlite3.connect(LOCAL_OBS_DB)
+    c = conn.cursor()
+    c.execute("""
+    UPDATE observations
+    SET taxon_name = ?, taxon_id = ?, vernacular_name = ?, remarks = COALESCE(NULLIF(?, ''), remarks)
+    WHERE id = ?;
+    """, (taxon_name, taxon_id, vernacular_name, remarks, obs_id))
+    conn.commit()
+
+    c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
+    row_data = c.fetchone()
+    if not row_data:
+        print(f"Hoiatus: Vaatlus {obs_id} ei leitud kohalikust andmebaasist!", file=sys.stderr)
+        conn.close()
+        return
+
+    cols = [d[0] for d in c.description]
+    obs_record = dict(zip(cols, row_data))
+
+    c.execute("SELECT COALESCE(filepath, image_url) FROM observation_photos WHERE observation_id = ?;", (obs_id,))
+    photos = [r[0] for r in c.fetchall() if r[0]]
+    conn.close()
+
+    print(f"Kohalik andmebaas uuendatud: {obs_record.get('vernacular_name', '')} ({obs_record.get('taxon_name', '')})")
+
+    # Uuenda Google Photos
+    if photos:
+        print(f"Uuendan Google Photos albumi 'PlutoF Seenevaatlused' kirjeldust ({len(photos)} fotot)...")
+        try:
+            sys.path.insert(0, "/Users/metrobee/GEMINI/scripts")
+            import google_photos_sync
+            google_photos_sync.sync_observation_to_google_photos(photos, obs_record, album_name="PlutoF Seenevaatlused")
+            print("Google Photos kirjeldus ja metaandmed edukalt värskendatud!")
+        except Exception as e:
+            print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
+
+    print("=" * 80)
+    print(f"VAATLUS {obs_id} ON SÜSTEEMIDES EDUKALT VÄRSKENDATUD!")
+    print(f"PlutoF link: https://app.plutof.ut.ee/observation/view/{obs_id}")
+    print("=" * 80)
+
+
+def update_plutof_observation(obs_id: str, args: List[str]):
+    """Muudab vaatluse taksonit ja parameetreid otse PlutoF API-s ja sünkroonib süsteemid."""
+    taxon_query, _, flags = parse_cli_args(args)
+    if not taxon_query:
+        print("Viga: Palun määra uus liiginimi!", file=sys.stderr)
+        return
+
+    taxon_info = fetch_plutof_taxon_info(taxon_query)
+    if not taxon_info.get("taxon_id"):
+        print(f"Viga: PlutoF registrist ei leitud taksonit '{taxon_query}'!", file=sys.stderr)
+        return
+
+    creds = load_credentials()
+    token = get_plutof_token(creds)
+    if not token:
+        print("Viga: PlutoF autentimine ebaõnnestus!", file=sys.stderr)
+        return
+
+    print("=" * 80)
+    print(f"PLUTOF VAATLUSE {obs_id} MUUTMINE")
+    print(f"Uus takson: {taxon_info['full_name']} (ID: {taxon_info['taxon_id']})")
+    print("=" * 80)
+
+    url = f"https://api.plutof.ut.ee/v1/public/observations/{obs_id}/"
+    patch_body = {
+        "data": {
+            "type": "Observation",
+            "id": str(obs_id),
+            "relationships": {
+                "taxon_node": {
+                    "data": {
+                        "type": "Taxon",
+                        "id": str(taxon_info["taxon_id"])
+                    }
+                }
+            }
+        }
+    }
+    if flags.get("märkus"):
+        patch_body["data"]["attributes"] = {"remarks": flags["märkus"]}
+
+    payload = json.dumps(patch_body).encode("utf-8")
+    headers = {
+        "User-Agent": "PlutoFObservationAssistant/1.0",
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/vnd.api+json"
+    }
+
+    try:
+        req = urllib.request.Request(url, data=payload, headers=headers, method="PATCH")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print("PlutoF API vaatlus edukalt uuendatud!")
+    except Exception as e:
+        print(f"Viga PlutoF vaatluse muutmisel: {e}", file=sys.stderr)
+        return
+
+    # Sünkrooni kohalik andmebaas ja Google Photos
+    sync_single_observation(obs_id)
+
+
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ["-h", "--help", "--options", "options", "abi", "--abi"]:
         show_options_table()
         return
 
-    if "--sync" in sys.argv or "sync" in sys.argv:
-        print(" Sünkroonin PlutoF vaatlusi...")
-        sync_all_my_observations()
+    if len(sys.argv) >= 2 and sys.argv[1] in ["sync", "--sync", "sünkrooni", "--sünkrooni"]:
+        if len(sys.argv) >= 3 and sys.argv[2].isdigit():
+            sync_single_observation(sys.argv[2])
+            return
+        else:
+            print("Sünkroonin kõiki PlutoF vaatlusi...")
+            sync_all_my_observations()
+            return
+
+    if len(sys.argv) >= 3 and sys.argv[1] in ["update", "--update", "muuda", "--muuda", "paranda"]:
+        obs_id = sys.argv[2]
+        rest_args = sys.argv[3:]
+        update_plutof_observation(obs_id, rest_args)
         return
 
     if any(arg in sys.argv for arg in ["--list", "list", "--vaatlused", "vaatlused"]):
