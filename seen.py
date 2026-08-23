@@ -114,9 +114,9 @@ ABUNDANCE_MAP = {
 }
 
 CO_OBSERVERS_MAP = {
-    "aa": ("Allar Antson", "51250"),
-    "allar": ("Allar Antson", "51250"),
-    "antson": ("Allar Antson", "51250"),
+    "aa": ("Allar Antson", "81490"),
+    "allar": ("Allar Antson", "81490"),
+    "antson": ("Allar Antson", "81490"),
     "iz": ("Irma Zettur", "43966"),
     "irma": ("Irma Zettur", "43966"),
     "zettur": ("Irma Zettur", "43966"),
@@ -1179,7 +1179,7 @@ def show_options_table():
 
  4. KAASVAATLEJAD (kv: või kaasv:)
 -------------------------------------------------------------------------------
-  aa          -> Allar Antson (ID: 51250)
+  aa          -> Allar Antson (ID: 81490)
   vl          -> Vello Liiv (ID: 19681)
   iz          -> Irma Zettur (ID: 43966)
   pl          -> Piret Lõhmus (ID: 307)
@@ -1195,7 +1195,7 @@ def show_options_table():
   vl          -> Vello Liiv (ID: 19681)
   is          -> Irja Saar (ID: 253)
   kp          -> Kadri Pärtel (ID: 255)
-  aa          -> Allar Antson (ID: 51250)
+  aa          -> Allar Antson (ID: 81490)
   iz          -> Irma Zettur (ID: 43966)
   pl          -> Piret Lõhmus (ID: 307)
   alm / am    -> Anne-Liia Maido (ID: 74936)

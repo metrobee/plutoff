@@ -44,7 +44,7 @@ _seen() {
     )
 
     kv_opts=(
-        'aa:Allar Antson (51250)'
+        'aa:Allar Antson (81490)'
         'vl:Vello Liiv (19681)'
         'iz:Irma Zettur (43966)'
         'pl:Piret Lõhmus (307)'
@@ -52,11 +52,15 @@ _seen() {
         'tt:Taavi Tatsi (73640)'
         'tv:Triin Varvas (44416)'
         'mp:Margit Päkk (54665)'
+        'kp:Kadri Pärtel (255)'
+        'is:Irja Saar (253)'
+    )
+
     det_opts=(
         'vl:Vello Liiv (19681)'
         'is:Irja Saar (253)'
         'kp:Kadri Pärtel (255)'
-        'aa:Allar Antson (51250)'
+        'aa:Allar Antson (81490)'
         'iz:Irma Zettur (43966)'
         'pl:Piret Lõhmus (307)'
         'alm:Anne-Liia Maido (74936)'
