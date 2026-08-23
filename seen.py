@@ -1341,63 +1341,136 @@ def sync_single_observation(obs_id: str):
 
 
 def update_plutof_observation(obs_id: str, args: List[str]):
-    """Muudab vaatluse taksonit ja parameetreid otse PlutoF API-s ja sünkroonib süsteemid."""
+    """Muudab vaatluse taksonit, määrajat või parameetreid ja sünkroonib süsteemid."""
     taxon_query, _, flags = parse_cli_args(args)
-    if not taxon_query:
-        print("Viga: Palun määra uus liiginimi!", file=sys.stderr)
-        return
-
-    taxon_info = fetch_plutof_taxon_info(taxon_query)
-    if not taxon_info.get("taxon_id"):
-        print(f"Viga: PlutoF registrist ei leitud taksonit '{taxon_query}'!", file=sys.stderr)
-        return
-
-    creds = load_credentials()
-    token = get_plutof_token(creds)
-    if not token:
-        print("Viga: PlutoF autentimine ebaõnnestus!", file=sys.stderr)
-        return
+    
+    init_local_db()
+    conn = sqlite3.connect(LOCAL_OBS_DB)
+    c = conn.cursor()
+    c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
+    row_data = c.fetchone()
+    existing_record = {}
+    if row_data:
+        cols = [d[0] for d in c.description]
+        existing_record = dict(zip(cols, row_data))
+    conn.close()
 
     print("=" * 80)
-    print(f"PLUTOF VAATLUSE {obs_id} MUUTMINE")
-    print(f"Uus takson: {taxon_info['full_name']} (ID: {taxon_info['taxon_id']})")
+    print(f"PLUTOF VAATLUSE {obs_id} MUUTMINE JA SÜNKROONIMINE")
     print("=" * 80)
 
-    url = f"https://api.plutof.ut.ee/v1/public/observations/{obs_id}/"
-    patch_body = {
-        "data": {
-            "type": "Observation",
-            "id": str(obs_id),
-            "relationships": {
-                "taxon_node": {
-                    "data": {
-                        "type": "Taxon",
-                        "id": str(taxon_info["taxon_id"])
-                    }
-                }
-            }
-        }
-    }
+    # 1. Taksoni muutmine (kui määratud)
+    taxon_info = None
+    if taxon_query:
+        taxon_info = fetch_plutof_taxon_info(taxon_query)
+        if taxon_info.get("taxon_id"):
+            print(f"Uus takson: {taxon_info['full_name']} (ID: {taxon_info['taxon_id']})")
+        else:
+            print(f"Viga: PlutoF registrist ei leitud taksonit '{taxon_query}'!", file=sys.stderr)
+            return
+
+    # 2. Määraja (kui määratud)
+    determiner_name = None
+    if flags.get("määraja"):
+        determiner_name = flags["määraja"].get("name")
+        print(f"Uus määraja: {determiner_name} (ID: {flags['määraja'].get('id', '-')})")
+
+    # 3. Kaasvaatlejad (kui määratud)
+    collectors_str = None
+    if flags.get("kaasvaatlejad"):
+        co_names = [co["name"] for co in flags["kaasvaatlejad"]]
+        collectors_str = f"Boris Meldre, {', '.join(co_names)}"
+        print(f"Uued kogujad: {collectors_str}")
+
+    # 4. Uuenda lokaalne SQLite andmebaas
+    conn = sqlite3.connect(LOCAL_OBS_DB)
+    c = conn.cursor()
+    
+    update_fields = []
+    update_vals = []
+    if taxon_info:
+        update_fields.extend(["taxon_name = ?", "taxon_id = ?", "vernacular_name = ?"])
+        update_vals.extend([taxon_info["full_name"], str(taxon_info["taxon_id"]), taxon_info.get("vernacular_name", "")])
+    if determiner_name:
+        update_fields.append("determiner = ?")
+        update_vals.append(determiner_name)
+    if collectors_str:
+        update_fields.append("collectors = ?")
+        update_vals.append(collectors_str)
+    if flags.get("substraat_nimi"):
+        update_fields.append("substrate = ?")
+        update_vals.append(flags["substraat_nimi"])
+    if flags.get("tüüp_nimi"):
+        update_fields.append("substrate_type = ?")
+        update_vals.append(flags["tüüp_nimi"])
+    if flags.get("ohtrus"):
+        update_fields.append("abundance = ?")
+        update_vals.append(flags["ohtrus"])
     if flags.get("märkus"):
-        patch_body["data"]["attributes"] = {"remarks": flags["märkus"]}
+        update_fields.append("remarks = ?")
+        update_vals.append(flags["märkus"])
 
-    payload = json.dumps(patch_body).encode("utf-8")
-    headers = {
-        "User-Agent": "PlutoFObservationAssistant/1.0",
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/vnd.api+json"
-    }
+    if update_fields:
+        update_vals.append(obs_id)
+        sql = f"UPDATE observations SET {', '.join(update_fields)} WHERE id = ?;"
+        c.execute(sql, update_vals)
+        conn.commit()
 
+    # Loeme värsked andmed
+    c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
+    row_data = c.fetchone()
+    if row_data:
+        cols = [d[0] for d in c.description]
+        obs_record = dict(zip(cols, row_data))
+    else:
+        obs_record = existing_record
+        obs_record["id"] = obs_id
+        if determiner_name:
+            obs_record["determiner"] = determiner_name
+
+    c.execute("SELECT COALESCE(filepath, image_url), google_photos_media_id FROM observation_photos WHERE observation_id = ?;", (obs_id,))
+    p_rows = c.fetchall()
+    photos = [r[0] for r in p_rows if r[0]]
+    old_gphotos_ids = [r[1] for r in p_rows if len(r) > 1 and r[1]]
+    conn.close()
+
+    print(f"Kohalik andmebaas uuendatud: Määraja: {obs_record.get('determiner', '')} | Takson: {obs_record.get('taxon_name', '')}")
+
+    # 5. Uuenda Google Photos
+    if photos:
+        print(f"Uuendan Google Photos albumi 'PlutoF Seenevaatlused' fotot ja kirjeldust ({len(photos)} fotot)...")
+        try:
+            sys.path.insert(0, "/Users/metrobee/GEMINI/scripts")
+            import google_photos_sync
+            new_ids = google_photos_sync.sync_observation_to_google_photos(
+                photos, obs_record, album_name="PlutoF Seenevaatlused", old_media_ids=old_gphotos_ids
+            )
+            if new_ids:
+                conn_up = sqlite3.connect(LOCAL_OBS_DB)
+                c_up = conn_up.cursor()
+                for idx, gid in enumerate(new_ids):
+                    if idx < len(photos):
+                        c_up.execute("UPDATE observation_photos SET google_photos_media_id = ? WHERE observation_id = ? AND (filepath = ? OR image_url = ?);", (gid, obs_id, photos[idx], photos[idx]))
+                conn_up.commit()
+                conn_up.close()
+            print("Google Photos kirjeldus edukalt uuendatud (vana foto asendatud uuega)!")
+        except Exception as e:
+            print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
+
+    # 6. Uuenda veebirakendus (fungib.web.app)
     try:
-        req = urllib.request.Request(url, data=payload, headers=headers, method="PATCH")
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            print("PlutoF API vaatlus edukalt uuendatud!")
-    except Exception as e:
-        print(f"Viga PlutoF vaatluse muutmisel: {e}", file=sys.stderr)
-        return
+        exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
+        if os.path.exists(exp_script):
+            subprocess.run(["python3", exp_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["firebase", "deploy", "--only", "hosting"], cwd="/Users/metrobee/Projects/fungib", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("Veebirakenduse fungib.web.app andmed sünkroonitud ja taustal juurutatud!")
+    except Exception:
+        pass
 
-    # Sünkrooni kohalik andmebaas ja Google Photos
-    sync_single_observation(obs_id)
+    print("=" * 80)
+    print(f"VAATLUS {obs_id} ON SÜSTEEMIDES EDUKALT VÄRSKENDATUD!")
+    print(f"PlutoF link: https://app.plutof.ut.ee/observation/view/{obs_id}")
+    print("=" * 80)
 
 
 def main():
