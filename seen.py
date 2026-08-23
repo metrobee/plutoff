@@ -183,9 +183,14 @@ def init_local_db():
         observation_id TEXT,
         plutof_file_id TEXT,
         uploaded_at TEXT,
+        google_photos_media_id TEXT,
         FOREIGN KEY(observation_id) REFERENCES observations(id)
     );
     """)
+    try:
+        conn.execute("ALTER TABLE observation_photos ADD COLUMN google_photos_media_id TEXT;")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -1236,8 +1241,10 @@ def sync_single_observation(obs_id: str):
     cols = [d[0] for d in c.description]
     obs_record = dict(zip(cols, row_data))
 
-    c.execute("SELECT COALESCE(filepath, image_url) FROM observation_photos WHERE observation_id = ?;", (obs_id,))
-    photos = [r[0] for r in c.fetchall() if r[0]]
+    c.execute("SELECT COALESCE(filepath, image_url), google_photos_media_id FROM observation_photos WHERE observation_id = ?;", (obs_id,))
+    p_rows = c.fetchall()
+    photos = [r[0] for r in p_rows if r[0]]
+    old_gphotos_ids = [r[1] for r in p_rows if len(r) > 1 and r[1]]
     conn.close()
 
     print(f"Kohalik andmebaas uuendatud: {obs_record.get('vernacular_name', '')} ({obs_record.get('taxon_name', '')})")
@@ -1248,8 +1255,18 @@ def sync_single_observation(obs_id: str):
         try:
             sys.path.insert(0, "/Users/metrobee/GEMINI/scripts")
             import google_photos_sync
-            google_photos_sync.sync_observation_to_google_photos(photos, obs_record, album_name="PlutoF Seenevaatlused")
-            print("Google Photos kirjeldus ja metaandmed edukalt värskendatud!")
+            new_ids = google_photos_sync.sync_observation_to_google_photos(
+                photos, obs_record, album_name="PlutoF Seenevaatlused", old_media_ids=old_gphotos_ids
+            )
+            if new_ids:
+                conn_up = sqlite3.connect(LOCAL_OBS_DB)
+                c_up = conn_up.cursor()
+                for idx, gid in enumerate(new_ids):
+                    if idx < len(photos):
+                        c_up.execute("UPDATE observation_photos SET google_photos_media_id = ? WHERE observation_id = ? AND (filepath = ? OR image_url = ?);", (gid, obs_id, photos[idx], photos[idx]))
+                conn_up.commit()
+                conn_up.close()
+            print("Google Photos kirjeldus ja metaandmed edukalt värskendatud (vana foto albumist eemaldatud)!")
         except Exception as e:
             print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
 

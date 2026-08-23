@@ -408,16 +408,41 @@ def embed_gps_to_jpeg_bytes(img_bytes: bytes, lat: float, lon: float) -> bytes:
         return img_bytes
 
 
-def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, taxon_name: str = "", album_name: str = ALBUM_NAME) -> bool:
-    """Lisab vaatluse fotod määratud Google Photos albumisse täielike metaandmetega."""
+def remove_media_items_from_album(creds, album_id: str, media_item_ids: List[str]) -> bool:
+    """Eemaldab meediaüksused albumist (vana foto eemaldamine uuendamisel)."""
+    valid_ids = [mid for mid in media_item_ids if mid]
+    if not valid_ids:
+        return True
+    url = f"https://photoslibrary.googleapis.com/v1/albums/{album_id}:batchRemoveMediaItems"
+    headers = {
+        "Authorization": f"Bearer {creds.token}",
+        "Content-Type": "application/json"
+    }
+    payload = json.dumps({"mediaItemIds": valid_ids}).encode("utf-8")
+    try:
+        req = urllib.request.Request(url, data=payload, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"Hoiatus: Vana foto albumist eemaldamine ebaõnnestus: {e}", file=sys.stderr)
+        return False
+
+
+def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, taxon_name: str = "", album_name: str = ALBUM_NAME, old_media_ids: Optional[List[str]] = None) -> List[str]:
+    """Lisab vaatluse fotod määratud Google Photos albumisse täielike metaandmetega ja eemaldab vanad fotod albumist."""
+    created_media_ids = []
     try:
         creds = get_authenticated_service()
         if not creds:
-            return False
+            return created_media_ids
 
         album_id = get_or_create_album(creds, album_name=album_name)
         if not album_id:
-            return False
+            return created_media_ids
+
+        # Eemalda vanad fotod albumist enne uute lisamist
+        if old_media_ids:
+            remove_media_items_from_album(creds, album_id, old_media_ids)
 
         headers_upload = {
             "Authorization": f"Bearer {creds.token}",
@@ -504,6 +529,12 @@ def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, tax
                         headers=headers_json
                     )
                     with urllib.request.urlopen(req_batch, timeout=20) as resp:
+                        res_data = json.loads(resp.read().decode("utf-8"))
+                        results = res_data.get("newMediaItemResults", [])
+                        if results:
+                            m_id = results[0].get("mediaItem", {}).get("id")
+                            if m_id:
+                                created_media_ids.append(m_id)
                         break
                 except urllib.error.HTTPError as e:
                     if e.code == 429 or e.code >= 500:
@@ -512,7 +543,10 @@ def sync_observation_to_google_photos(photo_paths: List[str], obs_info: Any, tax
                         raise e
 
         print(f"Sünkroonitud Google Photos albumisse: '{ALBUM_NAME}'")
-        return True
+        return created_media_ids
+    except Exception as e:
+        print(f"Google Photos sünkroonimise märkus: {e}", file=sys.stderr)
+        return created_media_ids
     except Exception as e:
         print(f"Google Photos sünkroonimise märkus: {e}", file=sys.stderr)
         return False
