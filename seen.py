@@ -430,7 +430,14 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "kivipuravik": "Boletus edulis",
         "männitaelik": "Porodaedalea pini",
         "männi-taelik": "Porodaedalea pini",
-        "mannitaelik": "Porodaedalea pini"
+        "mannitaelik": "Porodaedalea pini",
+        "cordiceps militaris": "Cordyceps militaris",
+        "cordiceps": "Cordyceps",
+        "cordyceps militaris": "Cordyceps militaris",
+        "harilik kedristõlvik": "Cordyceps militaris",
+        "kedristõlvik": "Cordyceps",
+        "hiirheinik": "Tricholoma virgatum",
+        "hiir-heinik": "Tricholoma virgatum",
     }
 
     # 1. ClipSnippet laiendused
@@ -518,7 +525,22 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "triibuline heinik": "Tricholoma portentosum",
         "triibuline-heinik": "Tricholoma portentosum",
         "triibulineheinik": "Tricholoma portentosum",
-        "tricholoma portentosum": "Tricholoma portentosum"
+        "tricholoma portentosum": "Tricholoma portentosum",
+        "küüslauknööbik": "Mycetinis scorodonius",
+        "küüslauk-nööbik": "Mycetinis scorodonius",
+        "küüslauknööpik": "Mycetinis scorodonius",
+        "kuuslauknoobik": "Mycetinis scorodonius",
+        "okkaroisknööbik": "Gymnopus perforans",
+        "okka roisknööbik": "Gymnopus perforans",
+        "okka-roisknööbik": "Gymnopus perforans",
+        "jõhvnööbik": "Gymnopus androsaceus",
+        "jõhv-nööbik": "Gymnopus androsaceus",
+        "väävelrisisikas": "Lactarius tabidus",
+        "kamperrsiisikas": "Lactarius camphoratus",
+        "haisev harisirmik": "Lepiota cristata",
+        "haisev-harisirmik": "Lepiota cristata",
+        "haisev heinik": "Tricholoma inamoenum",
+        "haisev-heinik": "Tricholoma inamoenum"
     }
     for k, v in overrides.items():
         mapping[k] = v
@@ -770,12 +792,40 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         "kingdom": "Fungi"
     }
 
+    candidates = []
+    if scientific_search:
+        candidates.append(scientific_search)
+    if raw_query not in candidates:
+        candidates.append(raw_query)
+    if clean_query not in candidates:
+        candidates.append(clean_query)
+    if norm_query not in candidates:
+        candidates.append(norm_query)
+
+    # Typo corrections (nt cordiceps -> cordyceps)
+    for c in list(candidates):
+        if "cordiceps" in c.lower():
+            candidates.append(re.sub(r'cordiceps', 'cordyceps', c, flags=re.IGNORECASE))
+        if "iceps" in c.lower():
+            candidates.append(re.sub(r'iceps', 'yceps', c, flags=re.IGNORECASE))
+
+    # Genus / epithet fallback kui liiginimi sisaldab mitut sõna
+    for c in list(candidates):
+        words = c.split()
+        if len(words) >= 2:
+            if words[0] not in candidates:
+                candidates.append(words[0])
+
     urls_to_try = []
-    if scientific_search and scientific_search != raw_query:
-        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(scientific_search)}")
-        urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(scientific_search)}")
-    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(clean_query)}")
-    urls_to_try.append(f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(clean_query)}")
+    seen_urls = set()
+    for cand in candidates:
+        if cand:
+            u1 = f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?name={urllib.parse.quote(cand)}"
+            u2 = f"https://api.plutof.ut.ee/v1/public/taxa/autocomplete/?q={urllib.parse.quote(cand)}"
+            for u in [u1, u2]:
+                if u not in seen_urls:
+                    seen_urls.add(u)
+                    urls_to_try.append(u)
 
     for url in urls_to_try:
         try:
