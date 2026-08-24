@@ -1382,6 +1382,16 @@ def sync_single_observation(obs_id: str):
         except Exception as e:
             print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
 
+    # Uuenda veebirakendus (fungib.web.app)
+    try:
+        exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
+        if os.path.exists(exp_script):
+            subprocess.run(["python3", exp_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["firebase", "deploy", "--only", "hosting"], cwd="/Users/metrobee/Projects/fungib", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("Veebirakenduse fungib.web.app andmed sünkroonitud ja taustal juurutatud!")
+    except Exception:
+        pass
+
     print("=" * 80)
     print(f"VAATLUS {obs_id} ON SÜSTEEMIDES EDUKALT VÄRSKENDATUD!")
     print(f"PlutoF link: https://app.plutof.ut.ee/observation/view/{obs_id}")
