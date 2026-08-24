@@ -758,14 +758,12 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         scientific_search = "Boletus edulis"
         clean_query = "Boletus edulis"
 
-    # Perekonna taseme tuvastamine (sp. / sp / spp. / perekond / liik)
+    # Perekonna taseme tuvastamine (AINULT kui kasutaja kirjutab selgelt sp. / sp / spp. / perekond)
     genus_mode = False
-    if re.search(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', norm_query, re.IGNORECASE):
+    if re.search(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond)\b)', norm_query, re.IGNORECASE):
         genus_mode = True
-        clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', clean_query, flags=re.IGNORECASE).strip()
-        clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond|liik)\b)', '', scientific_search, flags=re.IGNORECASE).strip()
-    elif " " not in scientific_search.strip():
-        genus_mode = True
+        clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond)\b)', '', clean_query, flags=re.IGNORECASE).strip()
+        clean_query = re.sub(r'(\b(sp\.|spp\.|perek\.)|\b(sp|spp|perekond)\b)', '', scientific_search, flags=re.IGNORECASE).strip()
 
     clean_norm = clean_query.lower()
 
