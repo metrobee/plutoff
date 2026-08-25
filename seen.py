@@ -16,6 +16,7 @@ import math
 import uuid
 import sqlite3
 import hashlib
+import difflib
 import datetime
 import urllib.request
 import urllib.parse
