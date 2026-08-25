@@ -170,6 +170,32 @@ CO_OBSERVERS_MAP = {
     "aiki jogeva": ("Aiki Jõgeva", "71917")
 }
 
+def resolve_person(identifier: str) -> Tuple[str, Optional[str]]:
+    if not identifier:
+        return ("", None)
+    clean = identifier.strip()
+    norm = clean.lower()
+    if norm in CO_OBSERVERS_MAP:
+        return CO_OBSERVERS_MAP[norm]
+    spaced = norm.replace("_", " ")
+    if spaced in CO_OBSERVERS_MAP:
+        return CO_OBSERVERS_MAP[spaced]
+    if clean.isdigit():
+        return (f"Isik #{clean}", clean)
+    try:
+        url = f"https://api.plutof.ut.ee/v1/public/persons/autocomplete/?name={urllib.parse.quote(spaced)}"
+        req = urllib.request.Request(url, headers={"User-Agent": "PlutoFObservationAssistant/1.0"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            items = data.get("data", [])
+            if items:
+                p_id = str(items[0]["id"])
+                p_name = items[0].get("attributes", {}).get("name") or spaced.title()
+                return (p_name, p_id)
+    except Exception:
+        pass
+    return (spaced.title(), None)
+
 
 def init_local_db():
     os.makedirs(os.path.dirname(LOCAL_OBS_DB), exist_ok=True)
@@ -1227,30 +1253,19 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             parts = [p.strip() for p in val.split(",") if p.strip()]
             for p in parts:
-                p_lower = p.lower()
-                if p_lower in CO_OBSERVERS_MAP:
-                    c_name, c_id = CO_OBSERVERS_MAP[p_lower]
-                    flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
-                else:
-                    flags["kaasvaatlejad"].append({"name": p, "id": None})
+                c_name, c_id = resolve_person(p)
+                flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
             expecting_co = val.endswith(",") or arg_clean.endswith(",")
         elif expecting_co or (lower_arg.rstrip(",") in CO_OBSERVERS_MAP and flags["kaasvaatlejad"]):
             # Jätk eelmisest kaasvaatlejate lipust tühiku tõttu (nt 'kv:aa, vl')
             clean_token = lower_arg.rstrip(",")
-            if clean_token in CO_OBSERVERS_MAP:
-                c_name, c_id = CO_OBSERVERS_MAP[clean_token]
-                flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
-            else:
-                flags["kaasvaatlejad"].append({"name": arg_clean.rstrip(","), "id": None})
+            c_name, c_id = resolve_person(clean_token)
+            flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
             expecting_co = arg_clean.endswith(",")
         elif any(clean_lower.startswith(prefix) for prefix in ["määraja:", "maaraja:", "määras:", "maaras:", "mä:", "ma:", "det:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
-            v_lower = val.lower()
-            if v_lower in CO_OBSERVERS_MAP:
-                det_name, det_id = CO_OBSERVERS_MAP[v_lower]
-                flags["määraja"] = {"name": det_name, "id": det_id}
-            else:
-                flags["määraja"] = {"name": val, "id": None}
+            det_name, det_id = resolve_person(val)
+            flags["määraja"] = {"name": det_name, "id": det_id}
             expecting_co = False
         elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:", "m:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
