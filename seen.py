@@ -160,7 +160,14 @@ CO_OBSERVERS_MAP = {
     "vl": ("Vello Liiv", "19681"),
     "vello": ("Vello Liiv", "19681"),
     "liiv": ("Vello Liiv", "19681"),
-    "vello liiv": ("Vello Liiv", "19681")
+    "vello liiv": ("Vello Liiv", "19681"),
+    "aj": ("Aiki Jõgeva", "71917"),
+    "aiki": ("Aiki Jõgeva", "71917"),
+    "jõgeva": ("Aiki Jõgeva", "71917"),
+    "jogeva": ("Aiki Jõgeva", "71917"),
+    "aikijogeva": ("Aiki Jõgeva", "71917"),
+    "aiki jõgeva": ("Aiki Jõgeva", "71917"),
+    "aiki jogeva": ("Aiki Jõgeva", "71917")
 }
 
 
@@ -1304,6 +1311,7 @@ def show_options_table():
 -------------------------------------------------------------------------------
   aa          -> Allar Antson (ID: 81490)
   vl          -> Vello Liiv (ID: 19681)
+  aj / aiki   -> Aiki Jõgeva (ID: 71917)
   iz          -> Irma Zettur (ID: 43966)
   pl          -> Piret Lõhmus (ID: 307)
   alm / am    -> Anne-Liia Maido (ID: 74936)
@@ -1316,6 +1324,7 @@ def show_options_table():
  5. MÄÄRAJA (mä:, määraja:, ma: või det:)
 -------------------------------------------------------------------------------
   vl          -> Vello Liiv (ID: 19681)
+  aj / aiki   -> Aiki Jõgeva (ID: 71917)
   is          -> Irja Saar (ID: 253)
   kp          -> Kadri Pärtel (ID: 255)
   aa          -> Allar Antson (ID: 81490)
