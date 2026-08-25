@@ -791,12 +791,12 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
     }
 
     candidates = []
-    if scientific_search:
+    if clean_query:
+        candidates.append(clean_query)
+    if scientific_search and scientific_search not in candidates:
         candidates.append(scientific_search)
     if raw_query not in candidates:
         candidates.append(raw_query)
-    if clean_query not in candidates:
-        candidates.append(clean_query)
     if norm_query not in candidates:
         candidates.append(norm_query)
 
@@ -844,20 +844,47 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
                         is_syn = at.get("is_synonym", False)
                         
                         sci_targets = [clean_norm, scientific_search.lower() if scientific_search else ""]
-                        sci_exact = 0 if any(tname == st or fname.startswith(st + " ") or fname == st for st in sci_targets if st) else (1 if any(st in fname for st in sci_targets if st) else 2)
+                        sci_targets = [st for st in sci_targets if st]
                         
+                        # 1. Täpne ladinakeelne vaste: tname == st (nt "pluteus" == "pluteus")
+                        if any(tname == st or fname == st for st in sci_targets):
+                            sci_score = 0
+                        elif any(tname.startswith(st + " ") or fname.startswith(st + " ") for st in sci_targets):
+                            sci_score = 1
+                        elif any(st in tname or st in fname for st in sci_targets):
+                            sci_score = 2
+                        else:
+                            sci_score = 3
+                        
+                        # 2. Täpne eestikeelne vaste: vern == vt (nt "lepapuravik" või "põdranapsik")
                         vern_targets = [norm_query, raw_query.lower(), clean_norm]
-                        vern_exact = 0 if any(vern == vt for vt in vern_targets if vt) else (1 if any(vt in vern for vt in vern_targets if vt and len(vt) > 2) else 2)
-                        name_match = min(sci_exact, vern_exact)
-
+                        vern_targets = [vt for vt in vern_targets if vt]
+                        if any(vern == vt for vt in vern_targets):
+                            vern_score = 0
+                        elif any(vt in vern and len(vt) > 2 for vt in vern_targets):
+                            vern_score = 1
+                        else:
+                            vern_score = 2
+                            
                         syn_score = 1 if is_syn else 0
-
+                        
+                        # Kui kasutaja otsis otseselt perekonda (genus_mode või sp./perekond):
                         if genus_mode:
                             rank_score = 0 if rank == "Genus" else (1 if rank == "Species" else 2)
-                            return (syn_score, rank_score, name_match)
-                        else:
+                            return (syn_score, min(sci_score, vern_score), rank_score)
+                            
+                        # Kui leiti täpne ladinakeelne vaste (nt "Pluteus" või "Amanita"):
+                        if sci_score == 0:
+                            rank_score = 0 if rank == "Genus" else 1
+                            return (syn_score, 0, rank_score)
+                            
+                        # Kui leiti täpne eestikeelne liiginimi (nt "lepapuravik"):
+                        if vern_score == 0:
                             rank_score = 0 if rank == "Species" else (1 if rank == "Genus" else 2)
-                            return (syn_score, name_match, rank_score)
+                            return (syn_score, 0, rank_score)
+                            
+                        rank_score = 0 if rank == "Species" else (1 if rank == "Genus" else 2)
+                        return (syn_score, min(sci_score, vern_score), rank_score)
                     
                     sorted_items = sorted(items, key=sort_key)
                     match = sorted_items[0]
