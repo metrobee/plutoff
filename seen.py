@@ -438,6 +438,8 @@ def load_local_taxa_mappings() -> Dict[str, str]:
         "kedristõlvik": "Cordyceps",
         "hiirheinik": "Tricholoma virgatum",
         "hiir-heinik": "Tricholoma virgatum",
+        "russula fennoscandia": "Russula fennoscandica",
+        "russula fennoscandica": "Russula fennoscandica",
     }
 
     # 1. ClipSnippet laiendused
@@ -800,12 +802,25 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
     if norm_query not in candidates:
         candidates.append(norm_query)
 
-    # Typo corrections (nt cordiceps -> cordyceps)
+    # Typo corrections (nt cordiceps -> cordyceps, fennoscandia -> fennoscandica)
     for c in list(candidates):
         if "cordiceps" in c.lower():
             candidates.append(re.sub(r'cordiceps', 'cordyceps', c, flags=re.IGNORECASE))
         if "iceps" in c.lower():
             candidates.append(re.sub(r'iceps', 'yceps', c, flags=re.IGNORECASE))
+        # Ladinakeelsete lõppude tüüpilised kirjavead
+        if c.lower().endswith("ia"):
+            candidates.append(c[:-2] + "ica")
+        if c.lower().endswith("ica"):
+            candidates.append(c[:-3] + "ia")
+        if c.lower().endswith("us"):
+            candidates.append(c[:-2] + "um")
+        if c.lower().endswith("um"):
+            candidates.append(c[:-2] + "us")
+        if c.lower().endswith("is"):
+            candidates.append(c[:-2] + "e")
+        if c.lower().endswith("e"):
+            candidates.append(c[:-1] + "is")
 
     # Genus / epithet fallback kui liiginimi sisaldab mitut sõna
     for c in list(candidates):
@@ -813,6 +828,8 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
         if len(words) >= 2:
             if words[0] not in candidates:
                 candidates.append(words[0])
+            if words[1] not in candidates and len(words[1]) >= 4:
+                candidates.append(words[1])
 
     urls_to_try = []
     seen_urls = set()
@@ -846,15 +863,33 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
                         sci_targets = [clean_norm, scientific_search.lower() if scientific_search else ""]
                         sci_targets = [st for st in sci_targets if st]
                         
-                        # 1. Täpne ladinakeelne vaste: tname == st (nt "pluteus" == "pluteus")
+                        # 1. Täpne või sarnane ladinakeelne vaste
+                        words_q = clean_norm.split()
+                        words_t = tname.split()
+
                         if any(tname == st or fname == st for st in sci_targets):
                             sci_score = 0
+                        elif len(words_q) >= 2 and len(words_t) >= 2:
+                            # Kahesõnalise liiginime võrdlus
+                            genus_q, ep_q = words_q[0], words_q[1]
+                            genus_t, ep_t = words_t[0], words_t[1]
+                            if genus_q == genus_t:
+                                ep_sim = difflib.SequenceMatcher(None, ep_q, ep_t).ratio()
+                                if ep_sim >= 0.80:
+                                    sci_score = 0
+                                elif ep_sim >= 0.65:
+                                    sci_score = 1
+                                else:
+                                    # Täiesti teine liik samas perekonnas (nt Russula oleifera vs Russula fennoscandia)
+                                    sci_score = 90
+                            else:
+                                sci_score = 95
                         elif any(tname.startswith(st + " ") or fname.startswith(st + " ") for st in sci_targets):
                             sci_score = 1
                         elif any(st in tname or st in fname for st in sci_targets):
                             sci_score = 2
                         else:
-                            sci_score = 3
+                            sci_score = 5
                         
                         # 2. Täpne eestikeelne vaste: vern == vt (nt "lepapuravik" või "põdranapsik")
                         vern_targets = [norm_query, raw_query.lower(), clean_norm]
@@ -875,7 +910,7 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
                             
                         # Kui leiti täpne ladinakeelne vaste (nt "Pluteus" või "Amanita"):
                         if sci_score == 0:
-                            rank_score = 0 if rank == "Genus" else 1
+                            rank_score = 0 if (rank == "Genus" and len(words_q) == 1) else (0 if rank == "Species" else 1)
                             return (syn_score, 0, rank_score)
                             
                         # Kui leiti täpne eestikeelne liiginimi (nt "lepapuravik"):
