@@ -37,16 +37,20 @@ Toetab nii täispikki kui ka ülilühikesi parameetreid:
 
 | Lühike lipp | Täispikk vaste | Kirjeldus / Näited |
 | :--- | :--- | :--- |
-| **`s:`** | `substraat:` | Puuliik (*kuusk, mänd, kask, haab, lepp, sanglepp, tamm jne*) |
+| **`p:`** | `projekt:` / `proj:` / `pr:` | Projekt / Uuring (*2023, foray2023, foray2022, karula, praks või nimi/ID*) |
+| **`s:`** | `substraat:` / `sub:` | Puuliik (*kuusk, mänd, kask, haab, lepp, sanglepp, tamm jne*) |
 | **`t:`** | `tüüp:` / `tyyp:` | Substraadi tüüp (*lamatüvi, känd, tüügas, lamaoks, kõdu, muld*) |
-| **`o:`** | `ohtrus:` | Ohtrus (*üksikud, vähe, mõõdukalt, sage, palju, massiliselt*) |
+| **`o:`** | `ohtrus:` / `oht:` | Ohtrus (*üksikud, vähe, mõõdukalt, sage, palju, massiliselt*) |
+| **`mä:`** | `määraja:` / `det:` | Määraja (*vl, aj, aiki, is, kp, aa, iz, pl, alm, tt, tv, mp*) |
 | **`kv:`** | `kaasv:` / `kaasvaatleja:` | Kaasvaatlejad (*aa, vl, iz, pl, alm, tt, tv, mp, kp, is*) |
 | **`m:`** | `märkus:` | Vabatekstiline märkus või leiu lisainfo |
 
 ### 2. ZSH Tab-automaatlõpetus (Tab Completion)
+- Kirjuta `p:` ja vajuta **`<TAB>`** -> avaneb projektide loend (*2023, foray, karula*).
 - Kirjuta `s:` ja vajuta **`<TAB>`** -> avaneb puuliikide loend.
 - Kirjuta `t:` ja vajuta **`<TAB>`** -> avaneb substraadi tüüpide loend.
 - Kirjuta `o:` või `oht:` ja vajuta **`<TAB>`** -> avaneb ohtruse loend.
+- Kirjuta `mä:` ja vajuta **`<TAB>`** -> avaneb määrajate loend.
 - Kirjuta `kv:` ja vajuta **`<TAB>`** -> avaneb kaasvaatlejate loend.
 
 ---
