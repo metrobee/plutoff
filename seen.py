@@ -171,6 +171,53 @@ CO_OBSERVERS_MAP = {
     "aiki jogeva": ("Aiki Jõgeva", "71917")
 }
 
+PROJECTS_MAP = {
+    "2023": ("2023 Autumn Mushroom Foray", "108731"),
+    "foray2023": ("2023 Autumn Mushroom Foray", "108731"),
+    "autumn2023": ("2023 Autumn Mushroom Foray", "108731"),
+    "foray": ("2023 Autumn Mushroom Foray", "108731"),
+    "2023 autumn mushroom foray": ("2023 Autumn Mushroom Foray", "108731"),
+    "projekt 2023 autumn mushroom foray": ("2023 Autumn Mushroom Foray", "108731"),
+    "2022": ("2022 Autumn Mushroom Foray", "108191"),
+    "foray2022": ("2022 Autumn Mushroom Foray", "108191"),
+    "autumn2022": ("2022 Autumn Mushroom Foray", "108191"),
+    "2022 autumn mushroom foray": ("2022 Autumn Mushroom Foray", "108191"),
+    "karula": ("Fungistika praktikum, Karula 2026", "110017"),
+    "karula2026": ("Fungistika praktikum, Karula 2026", "110017"),
+    "praks": ("Fungistika praktikum, Karula 2026", "110017"),
+    "fungistika": ("Fungistika praktikum, Karula 2026", "110017"),
+    "fungistika praktikum, karula 2026": ("Fungistika praktikum, Karula 2026", "110017")
+}
+
+def resolve_project(identifier: str, token: Optional[str] = None) -> Tuple[str, Optional[str]]:
+    if not identifier:
+        return ("", None)
+    clean = identifier.strip()
+    norm = clean.lower().replace("projekt ", "").replace("project ", "").strip()
+    if norm in PROJECTS_MAP:
+        return PROJECTS_MAP[norm]
+    if clean.isdigit():
+        return (f"Projekt #{clean}", clean)
+    
+    if token:
+        try:
+            url = f"https://api.plutof.ut.ee/v1/public/projects/?filter[name]={urllib.parse.quote(clean)}"
+            req = urllib.request.Request(url, headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.api+json",
+                "User-Agent": "PlutoFObservationAssistant/1.0"
+            })
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                items = data.get("data", [])
+                if items:
+                    p_id = str(items[0]["id"])
+                    p_name = items[0].get("attributes", {}).get("name") or clean
+                    return (p_name, p_id)
+        except Exception:
+            pass
+    return (clean, None)
+
 def resolve_person(identifier: str) -> Tuple[str, Optional[str]]:
     if not identifier:
         return ("", None)
@@ -220,7 +267,9 @@ def init_local_db():
         abundance TEXT,
         remarks TEXT,
         url TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        project_id TEXT,
+        project_name TEXT
     );
 
     CREATE TABLE IF NOT EXISTS observation_photos (
@@ -242,6 +291,14 @@ def init_local_db():
         conn.execute("ALTER TABLE observations ADD COLUMN determiner TEXT;")
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE observations ADD COLUMN project_id TEXT;")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE observations ADD COLUMN project_name TEXT;")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -253,8 +310,8 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
     
     c.execute("""
     INSERT OR REPLACE INTO observations 
-    (id, taxon_name, taxon_id, vernacular_name, date_time, latitude, longitude, altitude, locality, county, commune, substrate, substrate_type, abundance, remarks, url, created_at, collectors, primary_observer, is_co_observer, determiner)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    (id, taxon_name, taxon_id, vernacular_name, date_time, latitude, longitude, altitude, locality, county, commune, substrate, substrate_type, abundance, remarks, url, created_at, collectors, primary_observer, is_co_observer, determiner, project_id, project_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, (
         obs_data["id"],
         obs_data.get("taxon_name"),
@@ -276,7 +333,9 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         obs_data.get("collectors", "Boris Meldre"),
         "Boris Meldre",
         0,
-        obs_data.get("determiner", "Boris Meldre")
+        obs_data.get("determiner", "Boris Meldre"),
+        obs_data.get("project_id", ""),
+        obs_data.get("project_name", "")
     ))
 
     for p in photos_data:
@@ -1138,6 +1197,7 @@ def normalize_cli_args(args_list: List[str]) -> List[str]:
         "ohtrus", "oht", "abund", "o",
         "kaasvaatleja", "kaasvaatlejad", "kaaslane", "kaaslased", "kaasv", "kaas", "co", "kv",
         "määraja", "maaraja", "määras", "maaras", "mä", "ma", "det",
+        "projekt", "project", "proj", "pr", "p",
         "märkus", "markus", "märkused", "note", "notes", "m"
     }
     
@@ -1169,7 +1229,8 @@ def normalize_cli_args(args_list: List[str]) -> List[str]:
                 # Kui lipp on 's' / 't' / 'o' ja järgmine argument on teadaolev väärtus (nt 'o üksikud', 's kuusk')
                 if (arg_lower in ["s", "sub", "subst", "substraat"] and next_arg.lower() in SUBSTRATE_MAP) or \
                    (arg_lower in ["t", "tüüp", "tyyp", "type"] and next_arg.lower() in TYPE_MAP) or \
-                   (arg_lower in ["o", "oht", "ohtrus"] and next_arg.lower() in ABUNDANCE_MAP):
+                   (arg_lower in ["o", "oht", "ohtrus"] and next_arg.lower() in ABUNDANCE_MAP) or \
+                   (arg_lower in ["p", "pr", "proj", "projekt", "project"] and next_arg.lower() in PROJECTS_MAP):
                     normalized.append(f"{arg}:{next_arg}")
                     i += 2
                     continue
@@ -1199,6 +1260,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
         "märkus": "",
         "kaasvaatlejad": [],
         "määraja": None,
+        "projekt": None,
         "force": False
     }
     taxon_words = []
@@ -1267,6 +1329,11 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             det_name, det_id = resolve_person(val)
             flags["määraja"] = {"name": det_name, "id": det_id}
+            expecting_co = False
+        elif any(clean_lower.startswith(prefix) for prefix in ["projekt:", "project:", "proj:", "pr:", "p:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
+            p_name, p_id = resolve_project(val)
+            flags["projekt"] = {"name": p_name, "id": p_id}
             expecting_co = False
         elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:", "m:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
@@ -1352,19 +1419,26 @@ def show_options_table():
   mp          -> Margit Päkk (ID: 54665)
   "Eesnimi Perekonnanimi" -> Otsitakse automaatselt PlutoF registrist
 
- 6. MÄRKUS (m: või märkus:)
+ 6. PROJEKT (p:, pr:, proj: või projekt:)
+-------------------------------------------------------------------------------
+  foray2023 / 2023 -> 2023 Autumn Mushroom Foray (ID: 108731)
+  foray2022 / 2022 -> 2022 Autumn Mushroom Foray (ID: 108191)
+  karula / praks   -> Fungistika praktikum, Karula 2026 (ID: 110017)
+  "Projekti Nimi"  -> Otsitakse automaatselt PlutoF registrist või kasutatakse ID-d
+
+ 7. MÄRKUS (m: või märkus:)
 -------------------------------------------------------------------------------
   m:tekst      -> Vabatekstiline märkus või vaatluse detailid
 
- 7. SÜNKROON JA PARANDUSED
+ 8. SÜNKROON JA PARANDUSED
 -------------------------------------------------------------------------------
   seen sync <ID> -> Sünkroonib vaatluse PlutoF-ist andmebaasi ja Google Photosesse
   seen --sync    -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
 
  NÄITED:
-  seen "Hygrophorus persicolor" /tee/foto.jpg mä:vl s:mänd o:üksikud
-  seen "Ramaria sp." /tee/foto.jpg kv:aa,vl mä:is s:kuusk t:lamatüvi
-  seen verev nahkis /tee/foto.jpg mä:vl s:mänd t:lamatüvi m:"ilus leid"
+  seen "Hygrophorus persicolor" /tee/foto.jpg p:foray2023 mä:vl s:mänd o:üksikud
+  seen "Ramaria sp." /tee/foto.jpg p:2023 kv:aa,vl mä:is s:kuusk t:lamatüvi
+  seen verev nahkis /tee/foto.jpg p:karula mä:vl s:mänd t:lamatüvi m:"ilus leid"
 ===============================================================================
 """)
 
@@ -1542,6 +1616,10 @@ def update_plutof_observation(obs_id: str, args: List[str]):
     if collectors_str:
         update_fields.append("collectors = ?")
         update_vals.append(collectors_str)
+    if flags.get("projekt") and flags["projekt"].get("name"):
+        update_fields.extend(["project_id = ?", "project_name = ?"])
+        update_vals.extend([str(flags["projekt"].get("id") or ""), flags["projekt"]["name"]])
+        print(f"Uus projekt: {flags['projekt']['name']} (ID: {flags['projekt'].get('id', '-')})")
     if flags.get("substraat_nimi"):
         update_fields.append("substrate = ?")
         update_vals.append(flags["substraat_nimi"])
@@ -1560,6 +1638,39 @@ def update_plutof_observation(obs_id: str, args: List[str]):
         sql = f"UPDATE observations SET {', '.join(update_fields)} WHERE id = ?;"
         c.execute(sql, update_vals)
         conn.commit()
+
+    # Kui määratud projekt ja on PlutoF token, uuendame ka PlutoF serveris
+    if flags.get("projekt") and flags["projekt"].get("id"):
+        try:
+            creds = load_credentials()
+            token = get_plutof_token(creds)
+            patch_url = f"https://api.plutof.ut.ee/v1/public/observations/{obs_id}/"
+            patch_data = {
+                "data": {
+                    "type": "Observation",
+                    "id": str(obs_id),
+                    "relationships": {
+                        "project": {
+                            "data": {"type": "Project", "id": str(flags["projekt"]["id"])}
+                        }
+                    }
+                }
+            }
+            req_patch = urllib.request.Request(
+                patch_url,
+                data=json.dumps(patch_data).encode("utf-8"),
+                headers={
+                    "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/vnd.api+json",
+                    "Accept": "application/vnd.api+json"
+                },
+                method="PATCH"
+            )
+            with urllib.request.urlopen(req_patch, timeout=10) as p_resp:
+                print(f"PlutoF serveris vaatlus {obs_id} seotud projektiga: {flags['projekt']['name']}")
+        except Exception as e:
+            print(f"Hoiatus: PlutoF serveris projekti uuendamine ebaõnnestus: {e}", file=sys.stderr)
 
     # Loeme värsked andmed
     c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
@@ -1749,6 +1860,9 @@ def main():
     if flags.get("määraja") and flags["määraja"].get("name"):
         det_display = f"{flags['määraja']['name']} (ID: {flags['määraja']['id']})" if flags['määraja'].get('id') else flags['määraja']['name']
         print(f" Määraja: {det_display}")
+    if flags.get("projekt") and flags["projekt"].get("name"):
+        proj_display = f"{flags['projekt']['name']} (ID: {flags['projekt']['id']})" if flags['projekt'].get('id') else flags['projekt']['name']
+        print(f" Projekt: {proj_display}")
     if flags["märkus"]:
         print(f" Märkus: {flags['märkus']}")
     print(f" Fotosid kokku: {len(resolved_photo_paths)}")
@@ -1888,6 +2002,11 @@ def main():
         }
     }
 
+    if flags.get("projekt") and flags["projekt"].get("id"):
+        obs_rels["project"] = {
+            "data": {"type": "Project", "id": str(flags["projekt"]["id"])}
+        }
+
     # Määraja (identified_by)
     determiner_obj = flags.get("määraja")
     determiner_name = "Boris Meldre"
@@ -1974,6 +2093,8 @@ def main():
         "remarks": full_remarks,
         "collectors": collectors_str,
         "determiner": determiner_name,
+        "project_id": str(flags["projekt"]["id"]) if flags.get("projekt") and flags["projekt"].get("id") else "",
+        "project_name": flags["projekt"]["name"] if flags.get("projekt") else "",
         "url": f"https://app.plutof.ut.ee/observation/view/{obs_id}"
     }
     
