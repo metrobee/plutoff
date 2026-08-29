@@ -168,6 +168,9 @@ CO_OBSERVERS_MAP = {
     "aiki": ("Aiki Jõgeva", "71917"),
     "jõgeva": ("Aiki Jõgeva", "71917"),
     "jogeva": ("Aiki Jõgeva", "71917"),
+    "nm": ("Nora Meldre", "95368"),
+    "nora": ("Nora Meldre", "95368"),
+    "nora meldre": ("Nora Meldre", "95368"),
     "aikijogeva": ("Aiki Jõgeva", "71917"),
     "aiki jõgeva": ("Aiki Jõgeva", "71917"),
     "aiki jogeva": ("Aiki Jõgeva", "71917")
@@ -1453,6 +1456,7 @@ def show_options_table():
   mp          -> Margit Päkk (ID: 54665)
   kp          -> Kadri Pärtel (ID: 255)
   is          -> Irja Saar (ID: 253)
+  nm / nora   -> Nora Meldre (ID: 95368)
 
  5. MÄÄRAJA (mä:, määraja:, ma: või det:)
 -------------------------------------------------------------------------------
@@ -1682,23 +1686,58 @@ def update_plutof_observation(obs_id: str, args: List[str]):
         c.execute(sql, update_vals)
         conn.commit()
 
-    # Kui määratud projekt ja on PlutoF token, uuendame ka PlutoF serveris
-    if flags.get("projekt") and flags["projekt"].get("id"):
-        try:
-            creds = load_credentials()
-            token = get_plutof_token(creds)
-            patch_url = f"https://api.plutof.ut.ee/v1/public/observations/{obs_id}/"
+    # 5. Uuenda PlutoF serveris (kui on volitused)
+    try:
+        creds = load_credentials()
+        token = get_plutof_token(creds)
+        person_id = fetch_person_id(creds.get("username", "Boris Meldre"), token) or "83911"
+        
+        patch_attrs = {}
+        patch_rels = {}
+
+        if taxon_info and taxon_info.get("taxon_id"):
+            patch_rels["taxon_node"] = {
+                "data": {"type": "Taxon", "id": str(taxon_info["taxon_id"])}
+            }
+        
+        if flags.get("projekt") and flags["projekt"].get("id"):
+            patch_rels["project"] = {
+                "data": {"type": "Project", "id": str(flags["projekt"]["id"])}
+            }
+
+        if flags.get("kaasvaatlejad"):
+            co_list = [{"type": "Person", "id": str(person_id)}]
+            for co in flags["kaasvaatlejad"]:
+                cid = co.get("id")
+                if not cid and co.get("name"):
+                    cid = fetch_person_id(co["name"], token)
+                if cid and str(cid) != str(person_id):
+                    co_list.append({"type": "Person", "id": str(cid)})
+            patch_rels["collected_by"] = {"data": co_list}
+
+        if determiner_name:
+            det_id = flags.get("määraja", {}).get("id")
+            if not det_id:
+                det_id = fetch_person_id(determiner_name, token)
+            if det_id:
+                patch_rels["identified_by"] = {"data": [{"type": "Person", "id": str(det_id)}]}
+
+        if flags.get("märkus"):
+            patch_attrs["remarks"] = flags["märkus"]
+
+        if patch_attrs or patch_rels:
             patch_data = {
                 "data": {
                     "type": "Observation",
-                    "id": str(obs_id),
-                    "relationships": {
-                        "project": {
-                            "data": {"type": "Project", "id": str(flags["projekt"]["id"])}
-                        }
-                    }
+                    "id": str(obs_id)
                 }
             }
+            if patch_attrs:
+                patch_data["data"]["attributes"] = patch_attrs
+            if patch_rels:
+                patch_data["data"]["relationships"] = patch_rels
+
+            patch_url = f"https://api.plutof.ut.ee/v1/public/observations/{obs_id}/"
             req_patch = urllib.request.Request(
                 patch_url,
                 data=json.dumps(patch_data).encode("utf-8"),
@@ -1711,9 +1750,9 @@ def update_plutof_observation(obs_id: str, args: List[str]):
                 method="PATCH"
             )
             with urllib.request.urlopen(req_patch, timeout=10) as p_resp:
-                print(f"PlutoF serveris vaatlus {obs_id} seotud projektiga: {flags['projekt']['name']}")
-        except Exception as e:
-            print(f"Hoiatus: PlutoF serveris projekti uuendamine ebaõnnestus: {e}", file=sys.stderr)
+                print(f"PlutoF serveris vaatlus {obs_id} edukalt uuendatud!")
+    except Exception as e:
+        print(f"Hoiatus: PlutoF serveri PATCH päring ebaõnnestus: {e}", file=sys.stderr)
 
     # Loeme värsked andmed
     c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
