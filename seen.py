@@ -20,6 +20,8 @@ import difflib
 import datetime
 import urllib.request
 import urllib.parse
+import subprocess
+import shutil
 from typing import Dict, List, Optional, Any, Tuple
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
@@ -390,13 +392,61 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         pass
 
     # Värskenda veebidashboardi andmestikku ja juuruta pilve
+    deploy_to_fungib()
+
+
+def deploy_to_fungib():
+    """Värskendab fungib.web.app andmestiku ja juurutab selle Firebase Hostingusse."""
+    exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
+    if not os.path.exists(exp_script):
+        return
+
     try:
-        import subprocess
-        exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
-        if os.path.exists(exp_script):
-            subprocess.run([sys.executable, exp_script], capture_output=True)
-            # Taustal Firebase Hosting juurutus (ei blokeeri terminali)
-            subprocess.Popen(["firebase", "deploy", "--only", "hosting"], cwd="/Users/metrobee/Projects/fungib", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([sys.executable, exp_script], check=True, capture_output=True)
+    except Exception as e:
+        print(f"Hoiatus: Andmete eksport ebaõnnestus: {e}", file=sys.stderr)
+        return
+
+    # Leia Firebase CLI binaarfail (sh NVM kaust)
+    firebase_bin = shutil.which("firebase")
+    if not firebase_bin:
+        for candidate in [
+            os.path.expanduser("~/.nvm/versions/node/v20.19.2/bin/firebase"),
+            "/usr/local/bin/firebase",
+            "/opt/homebrew/bin/firebase"
+        ]:
+            if os.path.exists(candidate):
+                firebase_bin = candidate
+                break
+
+    if firebase_bin:
+        try:
+            res = subprocess.run([firebase_bin, "deploy", "--only", "hosting", "--project", "fungib"],
+                                 cwd="/Users/metrobee/Projects/fungib", capture_output=True, text=True, timeout=60)
+            if res.returncode == 0:
+                print("Veebirakenduse fungib.web.app andmed sünkroonitud ja edukalt juurutatud!")
+            else:
+                print(f"Hoiatus: Firebase deploy ebaõnnestus: {res.stderr.strip()}", file=sys.stderr)
+        except Exception as e:
+            print(f"Hoiatus: Firebase juurutamine ebaõnnestus: {e}", file=sys.stderr)
+    else:
+        try:
+            subprocess.run(["npx", "-y", "firebase-tools", "deploy", "--only", "hosting", "--project", "fungib"],
+                           cwd="/Users/metrobee/Projects/fungib", capture_output=True, text=True, timeout=90)
+            print("Veebirakenduse fungib.web.app andmed sünkroonitud ja npx kaudu juurutatud!")
+        except Exception as e:
+            print(f"Hoiatus: Firebase CLI-d ei leitud: {e}", file=sys.stderr)
+
+
+def backup_local_database():
+    """Loob andmebaasist varukoopia enne kriitilisi operatsioone."""
+    try:
+        backup_dir = "/Users/metrobee/GEMINI/data/backups"
+        os.makedirs(backup_dir, exist_ok=True)
+        if os.path.exists(LOCAL_OBS_DB):
+            shutil.copy2(LOCAL_OBS_DB, os.path.join(backup_dir, "plutof_vaatlused.db"))
+        if os.path.exists(LOCAL_OBS_JSON):
+            shutil.copy2(LOCAL_OBS_JSON, os.path.join(backup_dir, "plutof_vaatlused.json"))
     except Exception:
         pass
 
@@ -1544,14 +1594,7 @@ def sync_single_observation(obs_id: str):
             print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
 
     # Uuenda veebirakendus (fungib.web.app)
-    try:
-        exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
-        if os.path.exists(exp_script):
-            subprocess.run(["python3", exp_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.Popen(["firebase", "deploy", "--only", "hosting"], cwd="/Users/metrobee/Projects/fungib", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print("Veebirakenduse fungib.web.app andmed sünkroonitud ja taustal juurutatud!")
-    except Exception:
-        pass
+    deploy_to_fungib()
 
     print("=" * 80)
     print(f"VAATLUS {obs_id} ON SÜSTEEMIDES EDUKALT VÄRSKENDATUD!")
@@ -1714,14 +1757,7 @@ def update_plutof_observation(obs_id: str, args: List[str]):
             print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
 
     # 6. Uuenda veebirakendus (fungib.web.app)
-    try:
-        exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
-        if os.path.exists(exp_script):
-            subprocess.run(["python3", exp_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.Popen(["firebase", "deploy", "--only", "hosting"], cwd="/Users/metrobee/Projects/fungib", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print("Veebirakenduse fungib.web.app andmed sünkroonitud ja taustal juurutatud!")
-    except Exception:
-        pass
+    deploy_to_fungib()
 
     print("=" * 80)
     print(f"VAATLUS {obs_id} ON SÜSTEEMIDES EDUKALT VÄRSKENDATUD!")
