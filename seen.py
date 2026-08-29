@@ -1532,6 +1532,16 @@ def sync_single_observation(obs_id: str):
     taxon_id = taxon_node.get("id")
     taxon_name = attr.get("representation") or ""
     remarks = attr.get("remarks") or ""
+    locality_text = attr.get("locality_text") or ""
+    district = attr.get("district") or ""
+    commune = attr.get("commune") or ""
+    
+    proj_node = rels.get("project", {}).get("data") or {}
+    project_id = str(proj_node.get("id") or "") if proj_node else ""
+    project_name = ""
+    if project_id:
+        p_name, _ = resolve_project(project_id, token)
+        project_name = p_name
 
     vernacular_name = ""
     if taxon_id:
@@ -1553,9 +1563,17 @@ def sync_single_observation(obs_id: str):
     c = conn.cursor()
     c.execute("""
     UPDATE observations
-    SET taxon_name = ?, taxon_id = ?, vernacular_name = ?, remarks = COALESCE(NULLIF(?, ''), remarks)
+    SET taxon_name = COALESCE(NULLIF(?, ''), taxon_name),
+        taxon_id = COALESCE(NULLIF(?, ''), taxon_id),
+        vernacular_name = COALESCE(NULLIF(?, ''), vernacular_name),
+        remarks = COALESCE(NULLIF(?, ''), remarks),
+        locality = COALESCE(NULLIF(?, ''), locality),
+        county = COALESCE(NULLIF(?, ''), county),
+        commune = COALESCE(NULLIF(?, ''), commune),
+        project_id = COALESCE(NULLIF(?, ''), project_id),
+        project_name = COALESCE(NULLIF(?, ''), project_name)
     WHERE id = ?;
-    """, (taxon_name, taxon_id, vernacular_name, remarks, obs_id))
+    """, (taxon_name, taxon_id, vernacular_name, remarks, locality_text, district, commune, project_id, project_name, obs_id))
     conn.commit()
 
     c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
