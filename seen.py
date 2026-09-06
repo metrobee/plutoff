@@ -11,6 +11,7 @@ Kasutamine:
 
 import os
 import sys
+import re
 import json
 import math
 import uuid
@@ -1115,9 +1116,41 @@ def get_user_person_id(token: str) -> str:
 
 
 def get_country_id(country_name: str, token: str) -> str:
-    if country_name.lower() in ["eesti", "estonia"]:
+    if not country_name:
         return "47"
-    url = f"https://api.plutof.ut.ee/v1/public/countries/autocomplete/?name={urllib.parse.quote(country_name)}"
+    COUNTRY_MAP = {
+        "eesti": "Estonia", "estonia": "Estonia",
+        "soome": "Finland", "suomi": "Finland", "finland": "Finland",
+        "rootsi": "Sweden", "sverige": "Sweden", "sweden": "Sweden",
+        "läti": "Latvia", "latvija": "Latvia", "latvia": "Latvia",
+        "leedu": "Lithuania", "lietuva": "Lithuania", "lithuania": "Lithuania",
+        "norra": "Norway", "norge": "Norway", "norway": "Norway",
+        "taani": "Denmark", "danmark": "Denmark", "denmark": "Denmark",
+        "saksa": "Germany", "saksamaa": "Germany", "deutschland": "Germany", "germany": "Germany",
+        "vene": "Russian Federation", "venemaa": "Russian Federation", "russia": "Russian Federation"
+    }
+    clean = country_name.strip()
+    if "/" in clean:
+        parts = [p.strip() for p in clean.split("/")]
+        for p in parts:
+            if p.lower() in COUNTRY_MAP:
+                clean = COUNTRY_MAP[p.lower()]
+                break
+            clean = parts[-1]
+    
+    mapped_name = COUNTRY_MAP.get(clean.lower(), clean)
+    if mapped_name.lower() in ["eesti", "estonia"]:
+        return "47"
+    if mapped_name.lower() in ["soome", "suomi", "finland"]:
+        return "50"
+    if mapped_name.lower() in ["rootsi", "sverige", "sweden"]:
+        return "191"
+    if mapped_name.lower() in ["läti", "latvija", "latvia"]:
+        return "86"
+    if mapped_name.lower() in ["norra", "norge", "norway"]:
+        return "121"
+
+    url = f"https://api.plutof.ut.ee/v1/public/countries/autocomplete/?name={urllib.parse.quote(mapped_name)}"
     req = urllib.request.Request(url, headers={
         "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
         "Authorization": f"Bearer {token}"
@@ -1242,8 +1275,26 @@ def clean_cli_arg(arg: str) -> str:
     return cleaned.strip("\"' \t\r\n")
 
 
+def parse_coordinates(coord_str: str) -> Optional[Tuple[float, float]]:
+    """Tuvastab ja teisendab tekstist (lat, lon) ujupunktarvud."""
+    if not coord_str:
+        return None
+    clean = re.sub(r'^(c|coord|coords|gps|geo|latlon|lat_lon|koordinaadid|koordinaat):', '', coord_str.strip(), flags=re.IGNORECASE).strip()
+    pattern = r'^\s*([+-]?\d+(?:\.\d+)?)\s*[NnSs]?\s*[,;\s]\s*([+-]?\d+(?:\.\d+)?)\s*[EeWw]?\s*$'
+    m = re.match(pattern, clean)
+    if m:
+        try:
+            lat = float(m.group(1))
+            lon = float(m.group(2))
+            if -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0:
+                return (round(lat, 8), round(lon, 8))
+        except ValueError:
+            pass
+    return None
+
+
 def normalize_cli_args(args_list: List[str]) -> List[str]:
-    """Ühendab tühikutega eraldatud lipud (nt ['o', ':üksikud'], ['o', ':', 'üksikud'], ['o:', 'üksikud'])."""
+    """Ühendab tühikutega eraldatud lipud (nt ['o', ':üksikud'], ['o', ':', 'üksikud'], ['o:', 'üksikud'], ['c:', '60.34,', '25.08'])."""
     known_prefixes = {
         "substraat", "subst", "sub", "s",
         "tüüp", "tyyp", "type", "t",
@@ -1251,7 +1302,8 @@ def normalize_cli_args(args_list: List[str]) -> List[str]:
         "kaasvaatleja", "kaasvaatlejad", "kaaslane", "kaaslased", "kaasv", "kaas", "co", "kv",
         "määraja", "maaraja", "määras", "maaras", "mä", "ma", "det",
         "projekt", "project", "proj", "pr", "p",
-        "märkus", "markus", "märkused", "note", "notes", "m"
+        "märkus", "markus", "märkused", "note", "notes", "m",
+        "c", "coord", "coords", "gps", "geo", "latlon", "koordinaadid", "koordinaat"
     }
     
     normalized = []
@@ -1264,22 +1316,45 @@ def normalize_cli_args(args_list: List[str]) -> List[str]:
             
         arg_lower = arg.lower()
         
+        # Juhtum 0: 'c:60.3436635,' ja '25.0885533' või 'c:' ja '60.3436635,' ja '25.0885533'
+        if (any(arg_lower.startswith(f"{p}:") for p in ["c", "coord", "coords", "gps", "geo", "latlon", "koordinaadid", "koordinaat"]) or arg_lower in ["c", "coord", "coords", "gps", "geo"]) and i + 1 < len(args_list):
+            val_part = arg.split(":", 1)[1] if ":" in arg else ""
+            next_arg = clean_cli_arg(args_list[i + 1])
+            combined_candidate = f"{val_part} {next_arg}".strip()
+            if parse_coordinates(combined_candidate):
+                normalized.append(f"c:{combined_candidate}")
+                i += 2
+                continue
+            elif i + 2 < len(args_list):
+                next_next = clean_cli_arg(args_list[i + 2])
+                combined_candidate_3 = f"{val_part} {next_arg} {next_next}".strip()
+                if parse_coordinates(combined_candidate_3):
+                    normalized.append(f"c:{combined_candidate_3}")
+                    i += 3
+                    continue
+
+        # Juhtum 0.1: Kaks järjestikust komaga eraldatud numbrit ilma eesliiteta nt ['60.3436635,', '25.0885533']
+        if i + 1 < len(args_list):
+            next_arg = clean_cli_arg(args_list[i + 1])
+            pair_candidate = f"{arg} {next_arg}".strip()
+            if parse_coordinates(pair_candidate):
+                normalized.append(f"c:{pair_candidate}")
+                i += 2
+                continue
+
         # Juhtum 1: 'o' järgmise argumendiga ':üksikud' või ':' ja 'üksikud'
         if arg_lower in known_prefixes and i + 1 < len(args_list):
             next_arg = clean_cli_arg(args_list[i + 1])
             if next_arg.startswith(":") and len(next_arg) > 1:
-                # nt 'o' ja ':üksikud' -> 'o:üksikud'
                 normalized.append(f"{arg}:{next_arg[1:].strip()}")
                 i += 2
                 continue
             elif next_arg == ":" and i + 2 < len(args_list):
-                # nt 'o' ja ':' ja 'üksikud' -> 'o:üksikud'
                 val_arg = clean_cli_arg(args_list[i + 2])
                 normalized.append(f"{arg}:{val_arg.strip()}")
                 i += 3
                 continue
             elif not next_arg.startswith(":") and not os.path.exists(next_arg) and "/" not in next_arg:
-                # Kui lipp on 's' / 't' / 'o' ja järgmine argument on teadaolev väärtus (nt 'o üksikud', 's kuusk')
                 if (arg_lower in ["s", "sub", "subst", "substraat"] and next_arg.lower() in SUBSTRATE_MAP) or \
                    (arg_lower in ["t", "tüüp", "tyyp", "type"] and next_arg.lower() in TYPE_MAP) or \
                    (arg_lower in ["o", "oht", "ohtrus"] and next_arg.lower() in ABUNDANCE_MAP) or \
@@ -1314,6 +1389,7 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
         "kaasvaatlejad": [],
         "määraja": None,
         "projekt": None,
+        "koordinaadid": None,
         "force": False
     }
     taxon_words = []
@@ -1341,9 +1417,22 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             expecting_co = False
             continue
 
+        # Kontrollime koordinaate (nt c:60.34,25.08 või gps:60.34, 25.08 või otse 60.34, 25.08)
+        parsed_c = parse_coordinates(arg_clean)
+        if parsed_c:
+            flags["koordinaadid"] = parsed_c
+            expecting_co = False
+            continue
+
         lower_arg = arg_clean.lower()
         clean_lower = lower_arg.lstrip(":")
-        if any(clean_lower.startswith(prefix) for prefix in ["substraat:", "sub:", "subst:", "s:"]):
+        if any(clean_lower.startswith(prefix) for prefix in ["c:", "coord:", "coords:", "gps:", "geo:", "latlon:", "koordinaadid:", "koordinaat:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
+            c_res = parse_coordinates(val)
+            if c_res:
+                flags["koordinaadid"] = c_res
+            expecting_co = False
+        elif any(clean_lower.startswith(prefix) for prefix in ["substraat:", "sub:", "subst:", "s:"]):
             val = arg_clean.lstrip(":").split(":", 1)[1].strip()
             mapped = SUBSTRATE_MAP.get(val.lower())
             if mapped:
@@ -1373,7 +1462,6 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
                 flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
             expecting_co = val.endswith(",") or arg_clean.endswith(",")
         elif expecting_co or (lower_arg.rstrip(",") in CO_OBSERVERS_MAP and flags["kaasvaatlejad"]):
-            # Jätk eelmisest kaasvaatlejate lipust tühiku tõttu (nt 'kv:aa, vl')
             clean_token = lower_arg.rstrip(",")
             c_name, c_id = resolve_person(clean_token)
             flags["kaasvaatlejad"].append({"name": c_name, "id": c_id})
@@ -1480,19 +1568,22 @@ def show_options_table():
   karula / praks   -> Fungistika praktikum, Karula 2026 (ID: 110017)
   "Projekti Nimi"  -> Otsitakse automaatselt PlutoF registrist või kasutatakse ID-d
 
- 7. MÄRKUS (m: või märkus:)
+ 8. KOORDINAADID JA ASUKOHT (c:, coord:, coords: või gps:)
 -------------------------------------------------------------------------------
-  m:tekst      -> Vabatekstiline märkus või vaatluse detailid
+  c:60.3436635, 25.0885533 -> Määrab vaatluse täpsed GPS koordinaadid (lat, lon)
+  gps:57.73255, 27.06141   -> Tuvastab automaatselt riigi (nt Soome, Eesti), maakonna ja küla
+  60.3436635, 25.0885533   -> Töötab ka ilma eesliiteta otse komaga eraldatult
 
- 8. SÜNKROON JA PARANDUSED
+ 9. SÜNKROON JA PARANDUSED
 -------------------------------------------------------------------------------
   seen sync <ID> -> Sünkroonib vaatluse PlutoF-ist andmebaasi ja Google Photosesse
+  seen update <ID> c:lat,lon -> Uuendab olemasoleva vaatluse koordinaate ja asukohta
   seen --sync    -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
 
  NÄITED:
-  seen "Hygrophorus persicolor" /tee/foto.jpg p:foray2023 mä:vl s:mänd o:üksikud
-  seen "Ramaria sp." /tee/foto.jpg p:2023 kv:aa,vl mä:is s:kuusk t:lamatüvi
-  seen verev nahkis /tee/foto.jpg p:karula mä:vl s:mänd t:lamatüvi m:"ilus leid"
+  seen "Hygrophorus persicolor" /tee/foto.jpg c:60.3436635,25.0885533 p:foray2023 mä:vl
+  seen "Ramaria sp." /tee/foto.jpg gps:60.3436635,25.0885533 kv:aa,vl s:kuusk t:lamatüvi
+  seen update 8327053 c:60.3436635,25.0885533
 ===============================================================================
 """)
 
@@ -1558,9 +1649,24 @@ def sync_single_observation(obs_id: str):
         except Exception:
             pass
 
+    # Kontrollime ka taxonoccurrence API-st kinnituse staatust
+    is_verified_plutof = False
+    try:
+        occ_url = f"https://api.plutof.ut.ee/v1/public/taxonoccurrence/?types=observation&q={obs_id}"
+        occ_req = urllib.request.Request(occ_url, headers=headers)
+        with urllib.request.urlopen(occ_req, timeout=5) as occ_resp:
+            occ_data = json.loads(occ_resp.read().decode("utf-8"))
+            if occ_data.get("data"):
+                is_verified_plutof = occ_data["data"][0].get("attributes", {}).get("is_verified", False)
+    except Exception:
+        pass
+
     init_local_db()
     conn = sqlite3.connect(LOCAL_OBS_DB)
     c = conn.cursor()
+    
+    verified_val = "PlutoF" if is_verified_plutof else ""
+    
     c.execute("""
     UPDATE observations
     SET taxon_name = COALESCE(NULLIF(?, ''), taxon_name),
@@ -1571,9 +1677,10 @@ def sync_single_observation(obs_id: str):
         county = COALESCE(NULLIF(?, ''), county),
         commune = COALESCE(NULLIF(?, ''), commune),
         project_id = COALESCE(NULLIF(?, ''), project_id),
-        project_name = COALESCE(NULLIF(?, ''), project_name)
+        project_name = COALESCE(NULLIF(?, ''), project_name),
+        verified_by = CASE WHEN ? != '' THEN ? ELSE verified_by END
     WHERE id = ?;
-    """, (taxon_name, taxon_id, vernacular_name, remarks, locality_text, district, commune, project_id, project_name, obs_id))
+    """, (taxon_name, taxon_id, vernacular_name, remarks, locality_text, district, commune, project_id, project_name, verified_val, verified_val, obs_id))
     conn.commit()
 
     c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
@@ -1697,6 +1804,12 @@ def update_plutof_observation(obs_id: str, args: List[str]):
     if flags.get("märkus"):
         update_fields.append("remarks = ?")
         update_vals.append(flags["märkus"])
+    if flags.get("koordinaadid"):
+        lat, lon = flags["koordinaadid"]
+        geo = reverse_geocode(lat, lon)
+        update_fields.extend(["latitude = ?", "longitude = ?", "locality = ?", "county = ?", "commune = ?"])
+        update_vals.extend([lat, lon, geo.get("locality", ""), geo.get("county", ""), geo.get("municipality", "")])
+        print(f"Uued koordinaadid: {lat}, {lon} ({geo.get('full_area_name')})")
 
     if update_fields:
         update_vals.append(obs_id)
@@ -1722,6 +1835,17 @@ def update_plutof_observation(obs_id: str, args: List[str]):
             patch_rels["project"] = {
                 "data": {"type": "Project", "id": str(flags["projekt"]["id"])}
             }
+
+        if flags.get("koordinaadid"):
+            lat, lon = flags["koordinaadid"]
+            geo = reverse_geocode(lat, lon)
+            patch_attrs["geom"] = f"SRID=4326;POINT ({lon} {lat})"
+            if geo.get("locality"):
+                patch_attrs["locality_text"] = geo["locality"]
+            if geo.get("county"):
+                patch_attrs["district"] = geo["county"]
+            if geo.get("municipality"):
+                patch_attrs["commune"] = geo["municipality"]
 
         if flags.get("kaasvaatlejad"):
             co_list = [{"type": "Person", "id": str(person_id)}]
@@ -1956,6 +2080,8 @@ def main():
     if flags.get("projekt") and flags["projekt"].get("name"):
         proj_display = f"{flags['projekt']['name']} (ID: {flags['projekt']['id']})" if flags['projekt'].get('id') else flags['projekt']['name']
         print(f" Projekt: {proj_display}")
+    if flags.get("koordinaadid"):
+        print(f" Käsitsi koordinaadid: {flags['koordinaadid'][0]}, {flags['koordinaadid'][1]}")
     if flags["märkus"]:
         print(f" Märkus: {flags['märkus']}")
     print(f" Fotosid kokku: {len(resolved_photo_paths)}")
@@ -1973,9 +2099,13 @@ def main():
     # 3. Piltide EXIF
     items = []
     last_valid_gps = None
+    manual_coords = flags.get("koordinaadid")
     for fp in resolved_photo_paths:
         info = extract_exif(fp)
-        if (info["lat"] is None or info["lon"] is None) and last_valid_gps:
+        if manual_coords:
+            info["lat"], info["lon"] = manual_coords
+            info["gps_manual"] = True
+        elif (info["lat"] is None or info["lon"] is None) and last_valid_gps:
             info["lat"] = last_valid_gps["lat"]
             info["lon"] = last_valid_gps["lon"]
             info["altitude"] = last_valid_gps.get("altitude")
@@ -1993,10 +2123,13 @@ def main():
 
     primary = items[0]
     if primary.get("lat") and primary.get("lon"):
-        print(f" Asukoht: {primary.get('full_area_name')} ({primary.get('locality')})")
-        print(f" Koordinaadid: {primary.get('lat')}, {primary.get('lon')} (Aeg: {primary.get('date_time')})")
+        if manual_coords:
+            print(f" Asukoht (käsitsi GPS): {primary.get('full_area_name')} ({primary.get('locality')})")
+        else:
+            print(f" Asukoht: {primary.get('full_area_name')} ({primary.get('locality')})")
+        print(f" Koordinaadid: {primary.get('lat')}, {primary.get('lon')} (Aeg: {primary.get('date_time') or 'Määramata'})")
     else:
-        print("  Hoiatus: Fotost ei leitud GPS koordinaate!")
+        print("  Hoiatus: Fotost ei leitud GPS koordinaate (kasuta 'c:lat,lon' lipikut käsitsi määramiseks)!")
 
     # 4. Autentimine ja üleslaadimine
     print(" Sünkroonin fotosid ja saadan vaatluse PlutoF API-sse...")
