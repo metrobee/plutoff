@@ -1359,6 +1359,7 @@ def normalize_cli_args(args_list: List[str]) -> List[str]:
         "määraja", "maaraja", "määras", "maaras", "mä", "ma", "det",
         "projekt", "project", "proj", "pr", "p",
         "märkus", "markus", "märkused", "note", "notes", "m",
+        "k", "komm", "kommentaar", "kommentaarid", "comment", "comments",
         "c", "coord", "coords", "gps", "geo", "latlon", "koordinaadid", "koordinaat"
     }
     
@@ -1532,8 +1533,8 @@ def parse_cli_args(args_list: List[str]) -> Tuple[str, List[str], Dict[str, Any]
             p_name, p_id = resolve_project(val)
             flags["projekt"] = {"name": p_name, "id": p_id}
             expecting_co = False
-        elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:", "m:"]):
-            val = arg_clean.lstrip(":").split(":", 1)[1].strip()
+        elif any(clean_lower.startswith(prefix) for prefix in ["märkus:", "markus:", "märkused:", "note:", "notes:", "m:", "k:", "komm:", "kommentaar:", "kommentaarid:", "comment:", "comments:"]):
+            val = arg_clean.lstrip(":").split(":", 1)[1].strip("\"' \t\r\n")
             flags["märkus"] = val
             expecting_co = False
         else:
@@ -1624,6 +1625,11 @@ def show_options_table():
   karula / praks   -> Fungistika praktikum, Karula 2026 (ID: 110017)
   "Projekti Nimi"  -> Otsitakse automaatselt PlutoF registrist või kasutatakse ID-d
 
+ 7. MÄRKUS JA KOMMENTAAR (k:, komm:, kommentaar: või m:, märkus:, note:)
+-------------------------------------------------------------------------------
+  k:"tekst"        -> Lisab vaatlusele vaba märkuse või kommentaari
+  m:"tekst"        -> Sünonüüm: välimärkused, leiukoha kirjeldus jne
+
  8. KOORDINAADID JA ASUKOHT (c:, coord:, coords: või gps:)
 -------------------------------------------------------------------------------
   c:60.3436635, 25.0885533 -> Määrab vaatluse täpsed GPS koordinaadid (lat, lon)
@@ -1632,13 +1638,15 @@ def show_options_table():
 
  9. SÜNKROON JA PARANDUSED
 -------------------------------------------------------------------------------
-  seen sync <ID> -> Sünkroonib vaatluse PlutoF-ist andmebaasi ja Google Photosesse
-  seen update <ID> c:lat,lon -> Uuendab olemasoleva vaatluse koordinaate ja asukohta
-  seen --sync    -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
+  seen sync <ID>           -> Sünkroonib vaatluse PlutoF-ist andmebaasi ja Google Photosesse
+  seen update <ID> k:"..." -> Lisab või muudab olemasoleva vaatluse kommentaari/märkust
+  seen update <ID> c:...   -> Uuendab olemasoleva vaatluse koordinaate ja asukohta
+  seen --sync              -> Tõmbab kõik PlutoF vaatlused kohalikku andmebaasi
 
  NÄITED:
-  seen "Hygrophorus persicolor" /tee/foto.jpg c:60.3436635,25.0885533 p:foray2023 mä:vl
+  seen "Hygrophorus persicolor" /tee/foto.jpg c:60.3436635,25.0885533 p:foray2023 mä:vl k:"kõdunenud okkad"
   seen "Ramaria sp." /tee/foto.jpg gps:60.3436635,25.0885533 kv:aa,vl s:kuusk t:lamatüvi
+  seen update 8327053 k:"Leitud vanalt kõdunenud kuuselamatüvelt"
   seen update 8327053 c:60.3436635,25.0885533
 ===============================================================================
 """)
