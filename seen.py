@@ -13,6 +13,7 @@ import os
 import sys
 import re
 import json
+import time
 import math
 import uuid
 import sqlite3
@@ -30,6 +31,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 CREDENTIALS_FILE = os.path.expanduser("~/.plutof_env")
 CACHE_FILE = os.path.expanduser("~/.plutof_geo_cache.json")
 TAXA_CACHE_FILE = os.path.expanduser("~/.plutof_taxa_cache.json")
+PLUTOF_TOKEN_CACHE = os.path.expanduser("~/.plutof_token_cache.json")
 PROCESSED_REGISTRY_FILE = os.path.expanduser("~/.plutof_processed_photos.json")
 BORIS_REGISTER_FILE = "/Users/metrobee/GEMINI/data/boris_seened_photos_register.json"
 PHOTOS_TAXA_DB = "/Users/metrobee/GEMINI/data/photos_taxa.db"
@@ -399,19 +401,20 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
     deploy_to_fungib()
 
 
-def deploy_to_fungib():
-    """Värskendab fungib.web.app andmestiku ja juurutab selle Firebase Hostingusse."""
+def deploy_to_fungib(background: bool = True):
+    """Värskendab fungib.web.app andmestiku ja juurutab selle Firebase Hostingusse taustal."""
     exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
     if not os.path.exists(exp_script):
         return
 
+    # 1. Ekspordime observations.json lokaalselt (kiire ~0.3s)
     try:
         subprocess.run([sys.executable, exp_script], check=True, capture_output=True)
     except Exception as e:
         print(f"Hoiatus: Andmete eksport ebaõnnestus: {e}", file=sys.stderr)
         return
 
-    # Leia Firebase CLI binaarfail (sh NVM kaust)
+    # 2. Leia Firebase CLI binaarfail
     firebase_bin = shutil.which("firebase")
     if not firebase_bin:
         for candidate in [
@@ -423,23 +426,29 @@ def deploy_to_fungib():
                 firebase_bin = candidate
                 break
 
-    if firebase_bin:
+    cmd = [firebase_bin, "deploy", "--only", "hosting", "--project", "fungib"] if firebase_bin else ["npx", "-y", "firebase-tools", "deploy", "--only", "hosting", "--project", "fungib"]
+
+    if background:
         try:
-            res = subprocess.run([firebase_bin, "deploy", "--only", "hosting", "--project", "fungib"],
-                                 cwd="/Users/metrobee/Projects/fungib", capture_output=True, text=True, timeout=60)
-            if res.returncode == 0:
-                print("Veebirakenduse fungib.web.app andmed sünkroonitud ja edukalt juurutatud!")
-            else:
-                print(f"Hoiatus: Firebase deploy ebaõnnestus: {res.stderr.strip()}", file=sys.stderr)
-        except Exception as e:
-            print(f"Hoiatus: Firebase juurutamine ebaõnnestus: {e}", file=sys.stderr)
+            log_dir = "/Users/metrobee/GEMINI/data"
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = open(os.path.join(log_dir, "fungib_deploy.log"), "a")
+            subprocess.Popen(
+                cmd,
+                cwd="/Users/metrobee/Projects/fungib",
+                stdout=log_file,
+                stderr=log_file,
+                start_new_session=True
+            )
+        except Exception:
+            pass
     else:
         try:
-            subprocess.run(["npx", "-y", "firebase-tools", "deploy", "--only", "hosting", "--project", "fungib"],
-                           cwd="/Users/metrobee/Projects/fungib", capture_output=True, text=True, timeout=90)
-            print("Veebirakenduse fungib.web.app andmed sünkroonitud ja npx kaudu juurutatud!")
-        except Exception as e:
-            print(f"Hoiatus: Firebase CLI-d ei leitud: {e}", file=sys.stderr)
+            res = subprocess.run(cmd, cwd="/Users/metrobee/Projects/fungib", capture_output=True, text=True, timeout=60)
+            if res.returncode == 0:
+                print("Veebirakenduse fungib.web.app andmed sünkroonitud ja edukalt juurutatud!")
+        except Exception:
+            pass
 
 
 def backup_local_database():
@@ -1089,6 +1098,16 @@ def fetch_plutof_taxon_info(taxon_query: str) -> Dict[str, Any]:
 
 
 def get_plutof_token(creds: Dict[str, str]) -> str:
+    now = time.time()
+    if os.path.exists(PLUTOF_TOKEN_CACHE):
+        try:
+            with open(PLUTOF_TOKEN_CACHE, "r") as f:
+                c_data = json.load(f)
+                if c_data.get("access_token") and c_data.get("expires_at", 0) > now + 120:
+                    return c_data["access_token"]
+        except Exception:
+            pass
+
     ep = "https://api.plutof.ut.ee/v1/public/auth/token/"
     payload = {
         "grant_type": "password",
@@ -1101,18 +1120,55 @@ def get_plutof_token(creds: Dict[str, str]) -> str:
     req = urllib.request.Request(ep, data=data, headers={"User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         res = json.loads(resp.read().decode("utf-8"))
-        return res["access_token"]
+        token = res["access_token"]
+        expires_in = float(res.get("expires_in", 3600))
+        try:
+            existing = {}
+            if os.path.exists(PLUTOF_TOKEN_CACHE):
+                with open(PLUTOF_TOKEN_CACHE, "r") as f:
+                    existing = json.load(f)
+            existing["access_token"] = token
+            existing["expires_at"] = now + expires_in
+            existing["refresh_token"] = res.get("refresh_token")
+            with open(PLUTOF_TOKEN_CACHE, "w") as f:
+                json.dump(existing, f)
+        except Exception:
+            pass
+        return token
 
 
 def get_user_person_id(token: str) -> str:
+    if os.path.exists(PLUTOF_TOKEN_CACHE):
+        try:
+            with open(PLUTOF_TOKEN_CACHE, "r") as f:
+                c_data = json.load(f)
+                if c_data.get("person_id"):
+                    return str(c_data["person_id"])
+        except Exception:
+            pass
+
     url = "https://api.plutof.ut.ee/v1/public/user-profile/"
     req = urllib.request.Request(url, headers={
         "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
         "Authorization": f"Bearer {token}"
     })
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-        return str(data["data"]["relationships"]["person"]["data"]["id"])
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            pid = str(data["data"]["relationships"]["person"]["data"]["id"])
+            try:
+                existing = {}
+                if os.path.exists(PLUTOF_TOKEN_CACHE):
+                    with open(PLUTOF_TOKEN_CACHE, "r") as f:
+                        existing = json.load(f)
+                existing["person_id"] = pid
+                with open(PLUTOF_TOKEN_CACHE, "w") as f:
+                    json.dump(existing, f)
+            except Exception:
+                pass
+            return pid
+    except Exception:
+        return "83911"
 
 
 def get_country_id(country_name: str, token: str) -> str:
@@ -2326,13 +2382,17 @@ def main():
     
     record_observation_locally(obs_record, items)
 
-    # 7. Google Photos albumisse lisamine ('PlutoF Vaatlused')
+    # 7. Google Photos albumisse lisamine ('PlutoF Vaatlused') taustal
     if os.path.exists(os.path.expanduser("~/.google_photos_token.json")):
         try:
-            sys.path.insert(0, "/Users/metrobee/GEMINI/scripts")
-            from google_photos_sync import sync_observation_to_google_photos
-            sync_observation_to_google_photos(resolved_photo_paths, obs_record)
-        except Exception as e:
+            cmd = [
+                sys.executable,
+                "-c",
+                f"import sys; sys.path.insert(0, '/Users/metrobee/GEMINI/scripts'); from google_photos_sync import sync_observation_to_google_photos; sync_observation_to_google_photos({json.dumps(resolved_photo_paths)}, {json.dumps(obs_record)})"
+            ]
+            gp_log = open("/Users/metrobee/GEMINI/data/google_photos_sync.log", "a")
+            subprocess.Popen(cmd, stdout=gp_log, stderr=gp_log, start_new_session=True)
+        except Exception:
             pass
 
     # 8. Liiguta töödeldud pildifailid või ZIP arhiiv turvaliselt prügikasti (Trash)
