@@ -28,15 +28,26 @@ from typing import Dict, List, Optional, Any, Tuple
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
+USER_CONFIG_DIR = os.path.expanduser("~/.plutof")
+os.makedirs(USER_CONFIG_DIR, exist_ok=True)
+
 CREDENTIALS_FILE = os.path.expanduser("~/.plutof_env")
 CACHE_FILE = os.path.expanduser("~/.plutof_geo_cache.json")
 TAXA_CACHE_FILE = os.path.expanduser("~/.plutof_taxa_cache.json")
 PLUTOF_TOKEN_CACHE = os.path.expanduser("~/.plutof_token_cache.json")
 PROCESSED_REGISTRY_FILE = os.path.expanduser("~/.plutof_processed_photos.json")
-BORIS_REGISTER_FILE = "/Users/metrobee/GEMINI/data/boris_seened_photos_register.json"
-PHOTOS_TAXA_DB = "/Users/metrobee/GEMINI/data/photos_taxa.db"
-LOCAL_OBS_DB = "/Users/metrobee/GEMINI/data/plutof_vaatlused.db"
-LOCAL_OBS_JSON = "/Users/metrobee/GEMINI/data/plutof_vaatlused.json"
+
+# Kohalik andmebaas (toetab nii olemasolevat GEMINI/data kausta kui ka standardset ~/.plutof/vaatlused.db)
+if os.path.exists("/Users/metrobee/GEMINI/data/plutof_vaatlused.db"):
+    LOCAL_OBS_DB = "/Users/metrobee/GEMINI/data/plutof_vaatlused.db"
+    LOCAL_OBS_JSON = "/Users/metrobee/GEMINI/data/plutof_vaatlused.json"
+    PHOTOS_TAXA_DB = "/Users/metrobee/GEMINI/data/photos_taxa.db"
+    BORIS_REGISTER_FILE = "/Users/metrobee/GEMINI/data/boris_seened_photos_register.json"
+else:
+    LOCAL_OBS_DB = os.path.join(USER_CONFIG_DIR, "vaatlused.db")
+    LOCAL_OBS_JSON = os.path.join(USER_CONFIG_DIR, "vaatlused.json")
+    PHOTOS_TAXA_DB = os.path.join(USER_CONFIG_DIR, "photos_taxa.db")
+    BORIS_REGISTER_FILE = ""
 
 # Substraatide vastavused: Eestikeelne nimi -> (Teaduslik nimi, PlutoF Taksoni ID)
 SUBSTRATE_MAP = {
@@ -397,56 +408,24 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
     except Exception:
         pass
 
-    # Värskenda veebidashboardi andmestikku ja juuruta pilve
-    deploy_to_fungib()
+    # Käivita valikuline post-sync hook
+    run_post_sync_hook()
 
 
-def deploy_to_fungib(background: bool = True):
-    """Värskendab fungib.web.app andmestiku ja juurutab selle Firebase Hostingusse taustal."""
-    exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
-    if not os.path.exists(exp_script):
-        return
-
-    # 1. Ekspordime observations.json lokaalselt (kiire ~0.3s)
-    try:
-        subprocess.run([sys.executable, exp_script], check=True, capture_output=True)
-    except Exception as e:
-        print(f"Hoiatus: Andmete eksport ebaõnnestus: {e}", file=sys.stderr)
-        return
-
-    # 2. Leia Firebase CLI binaarfail
-    firebase_bin = shutil.which("firebase")
-    if not firebase_bin:
-        for candidate in [
-            os.path.expanduser("~/.nvm/versions/node/v20.19.2/bin/firebase"),
-            "/usr/local/bin/firebase",
-            "/opt/homebrew/bin/firebase"
-        ]:
-            if os.path.exists(candidate):
-                firebase_bin = candidate
-                break
-
-    cmd = [firebase_bin, "deploy", "--only", "hosting", "--project", "fungib"] if firebase_bin else ["npx", "-y", "firebase-tools", "deploy", "--only", "hosting", "--project", "fungib"]
-
-    if background:
+def run_post_sync_hook():
+    """Käivitab kasutaja kohaliku post-sync skripti (~/.plutof/post_sync.sh) või dashboardi ekspordi taustal."""
+    custom_hook = os.path.expanduser("~/.plutof/post_sync.sh")
+    if os.path.exists(custom_hook) and os.access(custom_hook, os.X_OK):
         try:
-            log_dir = "/Users/metrobee/GEMINI/data"
-            os.makedirs(log_dir, exist_ok=True)
-            log_file = open(os.path.join(log_dir, "fungib_deploy.log"), "a")
-            subprocess.Popen(
-                cmd,
-                cwd="/Users/metrobee/Projects/fungib",
-                stdout=log_file,
-                stderr=log_file,
-                start_new_session=True
-            )
+            subprocess.Popen([custom_hook], start_new_session=True)
+            return
         except Exception:
             pass
-    else:
+
+    exp_script = "/Users/metrobee/Projects/fungib/scripts/export_dashboard_data.py"
+    if os.path.exists(exp_script):
         try:
-            res = subprocess.run(cmd, cwd="/Users/metrobee/Projects/fungib", capture_output=True, text=True, timeout=60)
-            if res.returncode == 0:
-                print("Veebirakenduse fungib.web.app andmed sünkroonitud ja edukalt juurutatud!")
+            subprocess.Popen([sys.executable, exp_script], start_new_session=True)
         except Exception:
             pass
 
@@ -1137,38 +1116,63 @@ def get_plutof_token(creds: Dict[str, str]) -> str:
         return token
 
 
-def get_user_person_id(token: str) -> str:
+def get_user_info(token: str) -> Tuple[str, str]:
+    """Tagastab autentitud kasutaja PlutoF Person ID ja täisnime (person_id, person_name)."""
+    cached_id = None
+    cached_name = None
     if os.path.exists(PLUTOF_TOKEN_CACHE):
         try:
             with open(PLUTOF_TOKEN_CACHE, "r") as f:
                 c_data = json.load(f)
-                if c_data.get("person_id"):
-                    return str(c_data["person_id"])
+                cached_id = c_data.get("person_id")
+                cached_name = c_data.get("person_name")
+                if cached_id and cached_name:
+                    return str(cached_id), str(cached_name)
         except Exception:
             pass
 
-    url = "https://api.plutof.ut.ee/v1/public/user-profile/"
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
-        "Authorization": f"Bearer {token}"
-    })
+    pid = "83911"
+    name = "Boris Meldre"
     try:
+        url = "https://api.plutof.ut.ee/v1/public/user-profile/"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "PlutoFObservationAssistant/1.0 (https://github.com/metrobee/plutoff)",
+            "Authorization": f"Bearer {token}"
+        })
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             pid = str(data["data"]["relationships"]["person"]["data"]["id"])
-            try:
-                existing = {}
-                if os.path.exists(PLUTOF_TOKEN_CACHE):
-                    with open(PLUTOF_TOKEN_CACHE, "r") as f:
-                        existing = json.load(f)
-                existing["person_id"] = pid
-                with open(PLUTOF_TOKEN_CACHE, "w") as f:
-                    json.dump(existing, f)
-            except Exception:
-                pass
-            return pid
+
+        p_url = f"https://api.plutof.ut.ee/v1/public/persons/{pid}/"
+        p_req = urllib.request.Request(p_url, headers={
+            "User-Agent": "PlutoFObservationAssistant/1.0 (https://github.com/metrobee/plutoff)",
+            "Authorization": f"Bearer {token}"
+        })
+        with urllib.request.urlopen(p_req, timeout=10) as p_resp:
+            p_data = json.loads(p_resp.read().decode("utf-8"))
+            attrs = p_data.get("data", {}).get("attributes", {})
+            g_name = attrs.get("given_name", "").strip()
+            f_name = attrs.get("family_name", "").strip()
+            if g_name or f_name:
+                name = f"{g_name} {f_name}".strip()
+
+        existing = {}
+        if os.path.exists(PLUTOF_TOKEN_CACHE):
+            with open(PLUTOF_TOKEN_CACHE, "r") as f:
+                existing = json.load(f)
+        existing["person_id"] = pid
+        existing["person_name"] = name
+        with open(PLUTOF_TOKEN_CACHE, "w") as f:
+            json.dump(existing, f)
     except Exception:
-        return "83911"
+        pass
+
+    return pid, name
+
+
+def get_user_person_id(token: str) -> str:
+    pid, _ = get_user_info(token)
+    return pid
 
 
 def get_country_id(country_name: str, token: str) -> str:
@@ -1786,8 +1790,8 @@ def sync_single_observation(obs_id: str):
         except Exception as e:
             print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
 
-    # Uuenda veebirakendus (fungib.web.app)
-    deploy_to_fungib()
+    # Käivita valikuline post-sync hook
+    run_post_sync_hook()
 
     print("=" * 80)
     print(f"VAATLUS {obs_id} ON SÜSTEEMIDES EDUKALT VÄRSKENDATUD!")
@@ -1814,6 +1818,10 @@ def update_plutof_observation(obs_id: str, args: List[str]):
     print(f"PLUTOF VAATLUSE {obs_id} MUUTMINE JA SÜNKROONIMINE")
     print("=" * 80)
 
+    creds = load_credentials()
+    token = get_plutof_token(creds)
+    user_person_id, user_full_name = get_user_info(token)
+
     # 1. Taksoni muutmine (kui määratud)
     taxon_info = None
     if taxon_query:
@@ -1834,7 +1842,7 @@ def update_plutof_observation(obs_id: str, args: List[str]):
     collectors_str = None
     if flags.get("kaasvaatlejad"):
         co_names = [co["name"] for co in flags["kaasvaatlejad"]]
-        collectors_str = f"Boris Meldre, {', '.join(co_names)}"
+        collectors_str = f"{user_full_name}, {', '.join(co_names)}"
         print(f"Uued kogujad: {collectors_str}")
 
     # 4. Uuenda lokaalne SQLite andmebaas
@@ -1883,9 +1891,7 @@ def update_plutof_observation(obs_id: str, args: List[str]):
 
     # 5. Uuenda PlutoF serveris (kui on volitused)
     try:
-        creds = load_credentials()
-        token = get_plutof_token(creds)
-        person_id = fetch_person_id(creds.get("username", "Boris Meldre"), token) or "83911"
+        person_id = user_person_id
         
         patch_attrs = {}
         patch_rels = {}
@@ -2001,8 +2007,8 @@ def update_plutof_observation(obs_id: str, args: List[str]):
         except Exception as e:
             print(f"Hoiatus: Google Photos uuendamine ebaõnnestus: {e}", file=sys.stderr)
 
-    # 6. Uuenda veebirakendus (fungib.web.app)
-    deploy_to_fungib()
+    # Käivita valikuline post-sync hook
+    run_post_sync_hook()
 
     print("=" * 80)
     print(f"VAATLUS {obs_id} ON SÜSTEEMIDES EDUKALT VÄRSKENDATUD!")
@@ -2297,9 +2303,11 @@ def main():
             "data": {"type": "Project", "id": str(flags["projekt"]["id"])}
         }
 
+    user_person_id, user_full_name = get_user_info(token)
+
     # Määraja (identified_by)
     determiner_obj = flags.get("määraja")
-    determiner_name = "Boris Meldre"
+    determiner_name = user_full_name
     if determiner_obj and determiner_obj.get("id"):
         determiner_name = determiner_obj["name"]
         obs_rels["identified_by"] = {
@@ -2316,11 +2324,11 @@ def main():
         else:
             obs_attrs["identification_remarks"] = f"Määraja: {determiner_obj['name']}"
             obs_rels["identified_by"] = {
-                "data": [{"type": "Person", "id": str(person_id)}]
+                "data": [{"type": "Person", "id": str(user_person_id)}]
             }
     else:
         obs_rels["identified_by"] = {
-            "data": [{"type": "Person", "id": str(person_id)}]
+            "data": [{"type": "Person", "id": str(user_person_id)}]
         }
 
     if flags.get("substraat_taxon_id"):
@@ -2345,7 +2353,7 @@ def main():
         "https://api.plutof.ut.ee/v1/public/observations/",
         data=json.dumps(obs_payload).encode("utf-8"),
         headers={
-            "User-Agent": "PlutoFObservationAssistant/1.0 (borismeldre@gmail.com)",
+            "User-Agent": "PlutoFObservationAssistant/1.0 (https://github.com/metrobee/plutoff)",
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/vnd.api+json",
             "Accept": "application/vnd.api+json"
@@ -2363,7 +2371,7 @@ def main():
 
     # 6. Salvesta vaatlus ja piltide räsid reaalajas kohalikku andmebaasi
     co_names = [c["name"] for c in flags.get("kaasvaatlejad", [])]
-    collectors_str = f"Boris Meldre, {', '.join(co_names)}" if co_names else "Boris Meldre"
+    collectors_str = f"{user_full_name}, {', '.join(co_names)}" if co_names else user_full_name
 
     obs_record = {
         "id": obs_id,
