@@ -372,44 +372,56 @@ def record_observation_locally(obs_data: Dict[str, Any], photos_data: List[Dict[
         ))
 
     conn.commit()
-    
-    # Ekspordi ka JSON
-    c.execute("SELECT * FROM observations ORDER BY created_at DESC;")
-    cols = [d[0] for d in c.description]
-    all_rows = []
-    for r in c.fetchall():
-        row_dict = dict(zip(cols, r))
-        # Pildid
-        c.execute("SELECT sha256, filename, plutof_file_id, filepath FROM observation_photos WHERE observation_id = ?;", (row_dict["id"],))
-        p_cols = [d[0] for d in c.description]
-        row_dict["photos"] = [dict(zip(p_cols, pr)) for pr in c.fetchall()]
-        all_rows.append(row_dict)
-    
-    with open(LOCAL_OBS_JSON, "w", encoding="utf-8") as f:
-        json.dump(all_rows, f, indent=2, ensure_ascii=False)
-        
     conn.close()
 
-    # Reaalajas varukoopia Google Drive'i
-    try:
-        import shutil
-        gdrive_candidates = [
-            os.path.expanduser("~/Library/CloudStorage/GoogleDrive-borismeldre@gmail.com/Minu ketas"),
-            os.path.expanduser("~/Library/CloudStorage/GoogleDrive-borismeldre@gmail.com/My Drive")
-        ]
-        gdrive_base = next((p for p in gdrive_candidates if os.path.exists(p)), None)
-        if gdrive_base:
-            backup_dir = os.path.join(gdrive_base, "PlutoF_Backup")
-            os.makedirs(backup_dir, exist_ok=True)
-            if os.path.exists(LOCAL_OBS_DB):
-                shutil.copy2(LOCAL_OBS_DB, os.path.join(backup_dir, "plutof_vaatlused.db"))
-            if os.path.exists(LOCAL_OBS_JSON):
-                shutil.copy2(LOCAL_OBS_JSON, os.path.join(backup_dir, "plutof_vaatlused.json"))
-    except Exception:
-        pass
+    # Kiire asünkroonne JSON eksport ja Google Drive varukoopia taustal (N+1 päringu likvideerimine)
+    import threading
+    def _async_export_and_backup():
+        try:
+            b_conn = sqlite3.connect(LOCAL_OBS_DB)
+            b_c = b_conn.cursor()
+            
+            # 1 päring kõigi piltide kohta
+            b_c.execute("SELECT observation_id, sha256, filename, plutof_file_id, filepath FROM observation_photos;")
+            photos_by_obs = {}
+            for obs_id_p, sha, fn, pf_id, fp in b_c.fetchall():
+                if obs_id_p not in photos_by_obs:
+                    photos_by_obs[obs_id_p] = []
+                photos_by_obs[obs_id_p].append({"sha256": sha, "filename": fn, "plutof_file_id": pf_id, "filepath": fp})
 
-    # Käivita valikuline post-sync hook
-    run_post_sync_hook()
+            # 1 päring kõigi vaatluste kohta (optimaalne 2-päringu lahendus N+1 asemel)
+            b_c.execute("SELECT * FROM observations ORDER BY created_at DESC;")
+            cols = [d[0] for d in b_c.description]
+            all_rows = []
+            for r in b_c.fetchall():
+                row_dict = dict(zip(cols, r))
+                row_dict["photos"] = photos_by_obs.get(row_dict["id"], [])
+                all_rows.append(row_dict)
+            b_conn.close()
+
+            with open(LOCAL_OBS_JSON, "w", encoding="utf-8") as f:
+                json.dump(all_rows, f, indent=2, ensure_ascii=False)
+
+            # Reaalajas varukoopia Google Drive'i
+            gdrive_candidates = [
+                os.path.expanduser("~/Library/CloudStorage/GoogleDrive-borismeldre@gmail.com/Minu ketas"),
+                os.path.expanduser("~/Library/CloudStorage/GoogleDrive-borismeldre@gmail.com/My Drive")
+            ]
+            gdrive_base = next((p for p in gdrive_candidates if os.path.exists(p)), None)
+            if gdrive_base:
+                backup_dir = os.path.join(gdrive_base, "PlutoF_Backup")
+                os.makedirs(backup_dir, exist_ok=True)
+                if os.path.exists(LOCAL_OBS_DB):
+                    shutil.copy2(LOCAL_OBS_DB, os.path.join(backup_dir, "plutof_vaatlused.db"))
+                if os.path.exists(LOCAL_OBS_JSON):
+                    shutil.copy2(LOCAL_OBS_JSON, os.path.join(backup_dir, "plutof_vaatlused.json"))
+        except Exception:
+            pass
+
+        # Käivita valikuline post-sync hook
+        run_post_sync_hook()
+
+    threading.Thread(target=_async_export_and_backup, daemon=False).start()
 
 
 def run_post_sync_hook():
@@ -1246,31 +1258,34 @@ def fetch_person_id(name: str, token: str) -> Optional[str]:
 
 
 def move_to_trash(filepath: str) -> bool:
-    """Liigutab faili turvaliselt macOS Prügikasti (Trash). Kui tegemist on Apple Photos teegiga (.photoslibrary), ei puutu faili kunagi."""
+    """Liigutab faili välkkiirelt macOS Prügikasti (Trash). Kui tegemist on Apple Photos teegiga (.photoslibrary), ei puutu faili kunagi."""
+    abs_path = os.path.abspath(filepath)
+    if ".photoslibrary" in abs_path or "Photos Library" in abs_path:
+        # Apple Photos sisefail - säilitame 100% puutumatuna, et vältida Photos.app veateateid
+        return False
+
+    # 1. Kiireim viis: otsene atomiline liigutamine ~/.Trash kausta (sub-millisekundiline)
     try:
-        abs_path = os.path.abspath(filepath)
-        if ".photoslibrary" in abs_path or "Photos Library" in abs_path:
-            # Apple Photos sisefail - säilitame 100% puutumatuna, et vältida Photos.app veateateid
-            return False
-        cmd = f'tell application "Finder" to delete POSIX file "{abs_path}"'
-        import subprocess
-        subprocess.run(["osascript", "-e", cmd], check=True, capture_output=True)
-        return True
-    except Exception:
-        try:
-            abs_path = os.path.abspath(filepath)
-            if ".photoslibrary" in abs_path or "Photos Library" in abs_path:
-                return False
-            trash_dir = os.path.expanduser("~/.Trash")
+        trash_dir = os.path.expanduser("~/.Trash")
+        if os.path.exists(trash_dir):
             dest = os.path.join(trash_dir, os.path.basename(filepath))
             if os.path.exists(dest):
                 base, ext = os.path.splitext(os.path.basename(filepath))
                 dest = os.path.join(trash_dir, f"{base}_{int(datetime.datetime.now().timestamp())}{ext}")
-            os.rename(filepath, dest)
+            shutil.move(filepath, dest)
             return True
-        except Exception as e:
-            print(f"  Hoiatus: Ei saanud faili prügikasti liigutada: {e}", file=sys.stderr)
-            return False
+    except Exception:
+        pass
+
+    # 2. Tagavaraviis: AppleScript / Finder (kui tegemist on teise kettamahu või õigustega)
+    try:
+        cmd = f'tell application "Finder" to delete POSIX file "{abs_path}"'
+        import subprocess
+        subprocess.run(["osascript", "-e", cmd], check=True, capture_output=True)
+        return True
+    except Exception as e:
+        print(f"  Hoiatus: Ei saanud faili prügikasti liigutada: {e}", file=sys.stderr)
+        return False
 
 
 def upload_file_to_plutof(filepath: str, token: str) -> Tuple[str, str]:
