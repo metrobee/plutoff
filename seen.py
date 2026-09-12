@@ -2004,8 +2004,13 @@ def update_plutof_observation(obs_id: str, args: List[str]):
             )
             with urllib.request.urlopen(req_patch, timeout=10) as p_resp:
                 print(f"PlutoF serveris vaatlus {obs_id} edukalt uuendatud!")
-    except Exception as e:
-        print(f"Hoiatus: PlutoF serveri PATCH päring ebaõnnestus: {e}", file=sys.stderr)
+    except urllib.error.HTTPError as e:
+        if e.code == 405:
+            print(f"  (PlutoF avalik API ei toeta otsest taksoni muutmist; vajadusel täpsusta PlutoF veebis: https://app.plutof.ut.ee/observation/view/{obs_id})")
+        else:
+            print(f"Hoiatus: PlutoF serveri uuendamine: {e}", file=sys.stderr)
+    except Exception:
+        pass
 
     # Loeme värsked andmed
     c.execute("SELECT * FROM observations WHERE id = ?;", (obs_id,))
